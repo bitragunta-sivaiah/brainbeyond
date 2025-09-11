@@ -1,0 +1,238 @@
+@import url('https://fonts.googleapis.com/css2?family=Denk+One&family=Manrope:wght@200..800&family=Outfit:wght@100..900&family=Playwrite+IT+Trad:wght@100..400&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+@import "tailwindcss";
+
+:root {
+  /* LMS e-learning Palette - Light Mode */
+  --color-background: #fbfbfe;
+  --color-60-primary: #0056d2;
+  --color-30-secondary: #dedcff;
+  --color-10-accent: #433bff;
+  --text-color: #050315;
+  --text-custom: #a8a8a8;
+
+  /* Tailwind Color Mapping - Light Mode */
+  --background: var(--color-background);
+  --foreground: var(--text-color);
+  --card: #ffffff;
+  --card-foreground: #212529;
+  --popover: #ffffff;
+  --popover-foreground: #212529;
+  --primary: var(--color-60-primary);
+  --primary-foreground: #ffffff;
+  --secondary: #e9ecef;
+  --secondary-foreground: #495057;
+  --muted: #f1f3f5;
+  --muted-foreground: #6c757d;
+  --accent: var(--color-30-secondary);
+  --accent-foreground: var(--color-10-accent);
+  --destructive: #bc0013;
+  --destructive-foreground: #ffffff;
+  --border: #dee2e6;
+  --input: #f8f9fa;
+  --ring: var(--color-60-primary);
+  --custom: var(--text-custom);
+
+  /* Typography, Radius, and Shadows */
+  --font-body: 'Poppins', sans-serif;
+  --font-heading: 'Manrope', sans-serif;
+  --font-display: 'Denk One', sans-serif;
+  --font-accent: 'Playwrite IT Trad', cursive;
+  --radius: 0.75rem;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --tracking-normal: -0.025em;
+
+  /* Override any potentially problematic color functions for html2canvas */
+  color-scheme: light;
+}
+
+.dark {
+  /* LMS e-learning Palette - Dark Mode */
+  --color-background: #010104;
+  --color-60-primary: #42be03;
+  --color-30-secondary: #c1ff8f;
+  --color-10-accent: #22a900;
+  --text-color: #ebe9fc;
+  --text-custom: #a8a8a8;
+
+  /* Tailwind Color Mapping - Dark Mode */
+  --background: var(--color-background);
+  --foreground: var(--text-color);
+  --card: #151414;
+  --card-foreground: var(--text-color);
+  --popover: #242424;
+  --popover-foreground: var(--text-color);
+  --primary: var(--color-60-primary);
+  --primary-foreground: #ffffff;
+  --secondary: #343a40;
+  --secondary-foreground: #adb5bd;
+  --muted: #212529;
+  --muted-foreground: #868e96;
+  --accent: var(--color-30-secondary);
+  --accent-foreground: var(--color-10-accent);
+  --destructive: #fc0000;
+  --destructive-foreground: #ffffff;
+  --border: #343a40;
+  --input: #1e1e1e;
+  --ring: var(--color-60-primary);
+  --custom: var(--text-custom);
+
+  /* Typography, Radius, and Shadows */
+  --font-body: 'Poppins', sans-serif;
+  --font-heading: 'Manrope', sans-serif;
+  --font-display: 'Denk One', sans-serif;
+  --font-accent: 'Playwrite IT Trad', cursive;
+  --radius: 0.75rem;
+  --shadow-sm: 0 1px 2px 0 rgba(255, 255, 255, 0.05);
+  --shadow: 0 1px 3px 0 rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(255, 255, 255, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(255, 255, 255, 0.1), 0 2px 4px -1px rgba(255, 255, 255, 0.06);
+  --tracking-normal: -0.025em;
+
+  /* Override any potentially problematic color functions for html2canvas */
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-custom: var(--text-custom);
+
+  --font-body: var(--font-body);
+  --font-heading: var(--font-heading);
+  --font-display: var(--font-display);
+  --font-accent: var(--font-accent);
+
+  --radius-sm: calc(var(--radius) - 0.25rem);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 0.25rem);
+  --radius-xl: calc(var(--radius) + 1rem);
+  --radius-2xl: calc(var(--radius) + 1rem);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --tracking-tighter: calc(var(--tracking-normal) - 0.025em);
+  --tracking-tight: var(--tracking-normal);
+  --tracking-normal: var(--tracking-normal);
+  --tracking-wide: calc(var(--tracking-normal) + 0.025em);
+  --tracking-wider: calc(var(--tracking-normal) + 0.05em);
+  --tracking-widest: calc(var(--tracking-normal) + 0.1em);
+}
+
+body {
+  letter-spacing: var(--tracking-normal);
+}
+
+h1,h2,h3,h4,h5,h6 {
+  font-family: var(--font-heading);
+
+}
+h3{
+  font-weight: 700;
+}
+/* This is the best use for the display font */
+h1 {
+  font-family: var(--font-display);
+}
+
+p,span,div,li {
+  font-family: var(--font-body);
+}
+
+/* New CSS class for the accent font */
+.accent-text {
+  font-family: var(--font-accent);
+}
+
+/* The rest of the Marquee and scrollbar CSS from your original code can be added here */
+.marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.marquee-content {
+  display: inline-block;
+  animation: scroll-left var(--duration) linear infinite;
+  padding-right: 2rem;
+}
+
+.marquee-container:hover .marquee-content {
+  animation-play-state: paused;
+}
+
+@keyframes scroll-left {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+*::-webkit-scrollbar{
+  display: none;
+ 
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  display: block;
+  scrollbar-color: var(--primary) var(--muted);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  behavior: smooth;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--muted);
+  border-radius: var(--radius-md);
+  behavior: smooth;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--primary);
+  border-radius: var(--radius-md);
+  border: 2px solid var(--muted);
+  behavior: smooth;
+
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--primary-foreground);
+}
+
+@keyframes bell-ring {
+  0% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-10deg); }
+  45% { transform: rotate(9deg); }
+  60% { transform: rotate(-5deg); }
+  75% { transform: rotate(2deg); }
+  100% { transform: rotate(0); }
+}
+
+.animate-bell-ring {
+  animation: bell-ring 2s ease-in-out infinite;
+  transform-origin: 50% 0%;
+}
+ 
