@@ -1,449 +1,655 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
+import {
+    getPreparationById,
+    deleteStudyTopics,
+    deletePreparedQuestions,
+    generateLearningItems,
+    generatePracticeItems,
+    addPracticeProblem
+} from '../store/redux/interviewPreparationSlice'; // 👈 Adjust this import path
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    fetchPreparationById,
-    generateQuestions,
-    generateResources,
-    deleteBulkQuestions,
-    deleteBulkResources,
-    updateResource,
-    toggleQuestionPin,
-} from '../store/redux/interviewPreparationSlice';
-import {
-    Briefcase, Building2, CheckCircle, BrainCircuit, BookOpen, Bot,
-    ChevronDown, Trash2, Pin, Loader, AlertCircle, Sparkles,
-    Link as LinkIcon, FileText, Youtube, Code, Lightbulb, X // Added X icon
+    Target, BookOpen, BrainCircuit, Code, Brain, Lightbulb, FileText, Bot,
+    GraduationCap, Briefcase, BarChart, Link as LinkIcon, Loader2,
+    Trash2, PlusCircle, Sparkles, AlertTriangle, ArrowLeft, X, Trophy
 } from 'lucide-react';
-import { FaGraduationCap } from "react-icons/fa";
-import { GiTalk } from "react-icons/gi";
+import { FaGoogle, FaQuestionCircle } from 'react-icons/fa';
+import { SiLeetcode } from 'react-icons/si';
 
-// --- Helper Components ---
+// Import the SWEInterview component to render it directly
+import SWEInterview from './StartInterview'; // 👈 Adjust this import path
 
-const Spinner = () => (
-    <div className="flex justify-center items-center min-h-[50vh]">
-        <Loader className="w-12 h-12 animate-spin text-primary" />
+// --- HELPER & UI COMPONENTS ---
+
+const Loader = () => (
+    <div className="flex items-center justify-center h-screen bg-background">
+        <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            className="w-16 h-16 border-4 border-t-4 border-primary border-t-transparent rounded-full"
+        />
     </div>
 );
 
 const ErrorMessage = ({ message }) => (
-    <div className="flex flex-col items-center justify-center text-center min-h-[50vh] bg-destructive/10 text-destructive rounded-lg p-8">
-        <AlertCircle className="w-16 h-16 mb-4" />
-        <h2 className="text-2xl font-bold font-heading mb-2">An Error Occurred</h2>
-        <p className="font-body max-w-md">{message || "Could not load the preparation plan."}</p>
-        <Link to="/dashboard" className="mt-6 bg-destructive text-destructive-foreground font-bold py-2 px-6 rounded-md hover:bg-opacity-80 transition-colors">
-            Back to Dashboard
-        </Link>
+    <div className="flex flex-col items-center justify-center h-screen bg-background text-destructive p-4">
+        <AlertTriangle className="w-16 h-16 mb-4" />
+        <h2 className="text-2xl font-bold font-heading mb-2">Oops! Something went wrong.</h2>
+        <p className="font-body text-center">{message}</p>
     </div>
 );
 
-const Section = ({ icon: IconComponent, title, count, children }) => (
-    <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        className="bg-card p-4 sm:p-6 rounded-xl shadow-md border border-border mb-8"
-    >
-        <header className="flex items-center mb-6">
-            <IconComponent className="w-8 h-8 text-primary mr-4" />
-            <h2 className="text-xl md:text-3xl font-bold font-heading text-card-foreground flex items-center gap-3">
-                {title}
-                {typeof count !== 'undefined' && (
-                    <span className="text-lg font-sans font-bold bg-muted text-muted-foreground px-3 py-1 rounded-full">
-                        {count}
-                    </span>
-                )}
-            </h2>
-        </header>
+const Pill = ({ children, className }) => (
+    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${className}`}>
         {children}
-    </motion.section>
+    </span>
 );
 
-const SanitizedHtml = ({ content }) => {
-    return <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: content }} />;
-};
+const Modal = ({ isOpen, onClose, title, children }) => {
+    useEffect(() => {
+        const handleEsc = (event) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [onClose]);
 
-// --- Custom Hooks for Logic Abstraction ---
-
-const useQuestionManagement = (planId) => {
-    const dispatch = useDispatch();
-    const { isLoading } = useSelector(state => state.interviewPrep);
-    const [selectedQuestions, setSelectedQuestions] = useState([]);
-    
-    const handleGenerateQuestions = useCallback(() => dispatch(generateQuestions(planId)), [dispatch, planId]);
-    
-    const handleDeleteSelected = useCallback(() => {
-        if (!selectedQuestions.length) return;
-        dispatch(deleteBulkQuestions({ planId, questionIds: selectedQuestions }));
-        setSelectedQuestions([]);
-    }, [dispatch, planId, selectedQuestions]);
-    
-    const toggleSelection = useCallback((id) => {
-        setSelectedQuestions(prev => prev.includes(id) ? prev.filter(qId => qId !== id) : [...prev, id]);
-    }, []);
-    
-    const handlePinToggle = useCallback((questionId) => {
-        dispatch(toggleQuestionPin({ planId, questionId }));
-    }, [dispatch, planId]);
-
-    return { isLoading, selectedQuestions, handleGenerateQuestions, handleDeleteSelected, toggleSelection, handlePinToggle };
-};
-
-const useResourceManagement = (planId) => {
-    const dispatch = useDispatch();
-    const [selectedResources, setSelectedResources] = useState([]);
-
-    const handleDeleteSelected = useCallback(() => {
-        if (!selectedResources.length) return;
-        dispatch(deleteBulkResources({ planId, resourceIds: selectedResources }));
-        setSelectedResources([]);
-    }, [dispatch, planId, selectedResources]);
-
-    const toggleSelection = useCallback((resourceId) => {
-        setSelectedResources(prev => prev.includes(resourceId) ? prev.filter(id => id !== resourceId) : [...prev, resourceId]);
-    }, []);
-
-    const handleResourceUpdate = useCallback((resourceId, resourceData) => {
-        dispatch(updateResource({ planId, resourceId, resourceData }));
-    }, [dispatch, planId]);
-
-    return { selectedResources, handleDeleteSelected, toggleSelection, handleResourceUpdate };
-};
-
-
-// --- Component Definitions ---
-
-// --- NEW How-To-Use Guide Component ---
-const HowToUseGuide = () => {
-    const [isVisible, setIsVisible] = useState(true);
-
-    if (!isVisible) return null;
+    if (!isOpen) return null;
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="relative bg-primary/10 border-l-4 border-primary p-6 rounded-lg mb-8"
-        >
-            <button
-                onClick={() => setIsVisible(false)}
-                className="absolute top-2 right-2 p-1 rounded-full hover:bg-primary/20 text-primary"
-                aria-label="Dismiss guide"
-            >
-                <X size={20} />
-            </button>
-            <div className="flex items-start">
-                <Lightbulb className="w-8 h-8 mr-4 text-primary flex-shrink-0" />
-                <div>
-                    <h3 className="font-bold font-heading text-lg mb-2 text-foreground">How to Use This Preparation Plan</h3>
-                    <p className="text-sm text-muted-foreground mb-4">Here’s a quick guide to get the most out of this page:</p>
-                    <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground">
-                        <li><strong>Start New Mock Interview:</strong> Click this button in the header to begin an interactive AI-powered mock interview session.</li>
-                        <li><strong>Practice Questions:</strong> Use the <span className="font-semibold text-foreground">"Generate with AI"</span> button to get a list of relevant questions. You can <span className="font-semibold text-foreground">Pin</span> important ones to keep them at the top. Use the checkboxes to select and delete multiple questions at once.</li>
-                        <li><strong>Study Resources:</strong> Generate helpful articles, videos, and courses. You can also <span className="font-semibold text-foreground">Pin</span> your favorites and rate their usefulness with the dropdown menu.</li>
-                        <li><strong>AI Mock Interview History:</strong> Review the scores and detailed feedback from all your past mock interview sessions for this plan.</li>
-                    </ul>
-                </div>
-            </div>
-        </motion.div>
-    );
-};
-
-
-const PlanHeader = React.memo(({ plan }) => {
-    const statusStyles = useMemo(() => ({
-        'not-started': 'bg-muted text-muted-foreground',
-        'in-progress': 'bg-blue-500/20 text-blue-500',
-        'completed': 'bg-primary/20 text-primary',
-    }), []);
-
-    return (
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="mb-8 p-6 bg-card rounded-xl shadow-md border border-border">
-            <h1 className="text-4xl md:text-5xl font-display text-foreground mb-4 break-words">{plan.title}</h1>
-            <div className="flex flex-wrap gap-x-6 gap-y-3 text-muted-foreground font-body">
-                <div className="flex items-center gap-2"><Briefcase size={18} /> {plan.targetRole}</div>
-                <div className="flex items-center gap-2"><Building2 size={18} /> {plan.targetCompany}</div>
-                <div className="flex items-center gap-2"><FaGraduationCap size={18} /> {plan.experienceLevel}</div>
-                <div className="flex items-center gap-2">
-                    <CheckCircle size={18} />
-                    <span className={`px-3 py-1 text-sm font-semibold rounded-full capitalize ${statusStyles[plan.status]}`}>{plan.status.replace('-', ' ')}</span>
-                </div>
-            </div>
-            <div className="mt-6 border-t border-border pt-6">
-                <Link to={`/interview-prep/session/${plan._id}`}>
-                    <button className="flex items-center gap-3 bg-primary text-primary-foreground px-6 py-3 rounded-lg font-bold hover:bg-primary/90 transition-all transform hover:scale-105 shadow-lg">
-                        <GiTalk size={22} />
-                        Start New Mock Interview
-                    </button>
-                </Link>
-            </div>
-        </motion.div>
-    );
-});
-
-const QuestionItem = React.memo(({ question, isSelected, onToggleSelect, onPinToggle }) => {
-    const [isAnswerVisible, setIsAnswerVisible] = useState(false);
-    const difficultyStyles = useMemo(() => ({
-        easy: 'bg-green-500/20 text-green-700 dark:text-green-300',
-        medium: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
-        hard: 'bg-red-500/20 text-red-700 dark:text-red-300'
-    }), []);
-
-    return (
-        <motion.div layout className="bg-muted/30 p-4 rounded-lg border border-border/80 transition-shadow hover:shadow-md">
-            <div className="flex items-start gap-4">
-                <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(question._id)} className="mt-1 h-5 w-5 rounded border-border text-primary focus:ring-primary" aria-label={`Select question: ${question.question}`} />
-                <div className="flex-1">
-                    <p className="text-card-foreground font-medium">{question.question}</p>
-                    <div className="flex items-center flex-wrap gap-3 mt-2">
-                        <span className={`px-2 py-0.5 text-xs font-bold rounded-full capitalize ${difficultyStyles[question.difficulty]}`}>{question.difficulty}</span>
-                        {question.aiGeneratedAnswers?.[0] && (
-                            <button onClick={() => setIsAnswerVisible(!isAnswerVisible)} className="flex items-center gap-1 text-sm text-primary font-semibold">
-                                <Lightbulb size={14} />{isAnswerVisible ? 'Hide' : 'Show'} Answer
-                            </button>
-                        )}
-                    </div>
-                </div>
-                <button onClick={() => onPinToggle(question._id)} className="p-2 text-muted-foreground hover:bg-accent rounded-full" aria-label={question.isPinned ? 'Unpin question' : 'Pin question'}>
-                    {question.isPinned ? <Pin size={18} className="text-primary fill-primary"/> : <Pin size={18} />}
-                </button>
-            </div>
-            <AnimatePresence>
-                {isAnswerVisible && (
-                    <motion.div initial={{ opacity: 0, height: 0, marginTop: 0 }} animate={{ opacity: 1, height: 'auto', marginTop: '16px' }} exit={{ opacity: 0, height: 0, marginTop: 0 }} className="overflow-hidden">
-                        <div className="p-4 bg-background rounded-md border border-border">
-                            <SanitizedHtml content={question.aiGeneratedAnswers[0]} />
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </motion.div>
-    );
-});
-
-const QuestionsSection = ({ plan }) => {
-    const { isLoading, selectedQuestions, handleGenerateQuestions, handleDeleteSelected, toggleSelection, handlePinToggle } = useQuestionManagement(plan._id);
-
-    return (
-        <Section icon={BrainCircuit} title="Practice Questions" count={plan.questions?.length || 0}>
-            <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <button onClick={handleGenerateQuestions} disabled={isLoading} className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-md font-semibold hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    {isLoading ? <Loader className="animate-spin" size={20}/> : <Sparkles size={20} />}
-                    <span>Generate with AI</span>
-                </button>
-                <AnimatePresence>
-                    {selectedQuestions.length > 0 && (
-                        <motion.button initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={handleDeleteSelected} className="flex items-center gap-2 bg-destructive text-destructive-foreground px-4 py-2 rounded-md font-semibold hover:bg-destructive/90 transition-colors">
-                            <Trash2 size={20} /><span>Delete ({selectedQuestions.length})</span>
-                        </motion.button>
-                    )}
-                </AnimatePresence>
-            </header>
-            <motion.div layout className="space-y-4">
-                {plan.questions?.length > 0 ? (
-                    [...plan.questions].sort((a, b) => b.isPinned - a.isPinned).map(q => <QuestionItem key={q._id} question={q} isSelected={selectedQuestions.includes(q._id)} onToggleSelect={toggleSelection} onPinToggle={handlePinToggle} />)
-                ) : (
-                    <div className="text-center py-10 border-2 border-dashed border-border rounded-lg"><p className="text-muted-foreground">No questions yet. Generate some with AI!</p></div>
-                )}
-            </motion.div>
-        </Section>
-    );
-};
-
-const ResourceItem = React.memo(({ resource, isSelected, onToggleSelect, onUpdate }) => {
-    const resourceIcons = useMemo(() => ({
-        article: <FileText size={20} />, video: <Youtube size={20} />, course: <FaGraduationCap size={20} />,
-        documentation: <Code size={20} />, book: <BookOpen size={20} />, other: <LinkIcon size={20} />,
-    }), []);
-
-    const recommendationConfig = useMemo(() => ({
-        best: { class: 'bg-green-500/20 text-green-700 dark:text-green-300', label: 'Best' },
-        good: { class: 'bg-blue-500/20 text-blue-700 dark:text-blue-300', label: 'Good' },
-        average: { class: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300', label: 'Average' },
-        poor: { class: 'bg-red-500/20 text-red-700 dark:text-red-300', label: 'Poor' },
-    }), []);
-
-    const handlePinToggle = () => onUpdate(resource._id, { isPinned: !resource.isPinned });
-    const handleRecommendationChange = (e) => onUpdate(resource._id, { recommendation: e.target.value });
-    
-    const currentRecommendation = recommendationConfig[resource.recommendation] || recommendationConfig.average;
-
-    return (
-        <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-muted/30 p-4 rounded-lg border border-border/80 flex flex-col justify-between gap-3 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-3">
-                <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(resource._id)} className="mt-1.5 h-5 w-5 rounded border-border text-primary focus:ring-primary" />
-                <div className="flex-1 flex items-start gap-3">
-                    <div className="text-primary mt-1">{resourceIcons[resource.type] || resourceIcons.other}</div>
-                    <div className="flex-1">
-                        <a href={resource.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-card-foreground hover:underline break-all">{resource.name}</a>
-                        <p className="text-sm text-muted-foreground capitalize">{resource.type}</p>
-                    </div>
-                </div>
-                <button onClick={handlePinToggle} className="p-2 text-muted-foreground hover:bg-accent rounded-full">
-                    {resource.isPinned ? <Pin size={18} className="text-primary fill-primary" /> : <Pin size={18} />}
-                </button>
-            </div>
-            <div className="flex justify-end items-center gap-4 pl-8">
-                <span className="text-sm font-bold text-muted-foreground">Order: {resource.recommendedOrder}</span>
-                <select value={resource.recommendation} onChange={handleRecommendationChange} className={`bg-transparent text-xs font-bold rounded-full py-0.5 pl-2 pr-1 border-2 border-transparent hover:border-border cursor-pointer focus:ring-1 focus:ring-primary ${currentRecommendation.class}`}>
-                    {Object.keys(recommendationConfig).map(key => (
-                        <option key={key} value={key} className="bg-background text-foreground font-bold">{recommendationConfig[key].label}</option>
-                    ))}
-                </select>
-            </div>
-        </motion.div>
-    );
-});
-
-const ResourcesSection = React.memo(({ plan }) => {
-    const dispatch = useDispatch();
-    const { isLoading } = useSelector(state => state.interviewPrep);
-    const { selectedResources, handleDeleteSelected, toggleSelection, handleResourceUpdate } = useResourceManagement(plan._id);
-
-    const handleGenerateResources = useCallback(() => {
-        dispatch(generateResources(plan._id));
-    }, [dispatch, plan._id]);
-
-    const sortedResources = useMemo(() => {
-        if (!plan.studyResources) return [];
-        return [...plan.studyResources].sort((a, b) => b.isPinned - a.isPinned || a.recommendedOrder - b.recommendedOrder);
-    }, [plan.studyResources]);
-
-    return (
-        <Section icon={BookOpen} title="Study Resources" count={plan.studyResources?.length || 0}>
-            <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <button onClick={handleGenerateResources} disabled={isLoading} className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-md font-semibold hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    {isLoading ? <Loader className="animate-spin" size={20} /> : <Sparkles size={20} />}
-                    <span>Generate with AI</span>
-                </button>
-                <AnimatePresence>
-                    {selectedResources.length > 0 && (
-                        <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={handleDeleteSelected} className="flex items-center gap-2 bg-destructive text-destructive-foreground px-4 py-2 rounded-md font-semibold hover:bg-destructive/90">
-                            <Trash2 size={20} /><span>Delete ({selectedResources.length})</span>
-                        </motion.button>
-                    )}
-                </AnimatePresence>
-            </header>
-            {sortedResources.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {sortedResources.map((res) => (
-                        <ResourceItem 
-                            key={res._id}
-                            resource={res}
-                            isSelected={selectedResources.includes(res._id)}
-                            onToggleSelect={toggleSelection}
-                            onUpdate={handleResourceUpdate}
-                        />
-                    ))}
-                </div>
-            ) : (
-                <div className="text-center py-10 border-2 border-dashed border-border rounded-lg"><p className="text-muted-foreground">No study resources found. Generate some!</p></div>
+        <AnimatePresence>
+            {isOpen && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                     <motion.div
+                         initial={{ opacity: 0 }}
+                         animate={{ opacity: 1 }}
+                         exit={{ opacity: 0 }}
+                         className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                         onClick={onClose}
+                     />
+                     <motion.div
+                         initial={{ scale: 0.9, opacity: 0, y: 30 }}
+                         animate={{ scale: 1, opacity: 1, y: 0 }}
+                         exit={{ scale: 0.9, opacity: 0, y: 30 }}
+                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                         className="relative w-full max-w-lg bg-card border border-border rounded-lg shadow-xl z-10"
+                     >
+                         <div className="flex justify-between items-center p-4 border-b border-border">
+                             <h3 className="text-lg font-bold font-heading">{title}</h3>
+                             <button onClick={onClose} className="text-muted-foreground hover:text-foreground rounded-full p-1 transitions">
+                                 <X className="w-5 h-5"/>
+                             </button>
+                         </div>
+                         <div className="p-6">
+                             {children}
+                         </div>
+                     </motion.div>
+                 </div>
             )}
-        </Section>
+        </AnimatePresence>
     );
-});
+};
 
-
-const InterviewsSection = React.memo(({ plan }) => (
-    <Section icon={Bot} title="AI Mock Interview History" count={plan.aiMockInterviews?.length || 0}>
-        <div className="space-y-4">
-            {plan.aiMockInterviews?.length > 0 ? (
-                [...plan.aiMockInterviews].reverse().map(interview => (
-                    <details key={interview._id} className="bg-muted/30 p-4 rounded-lg border border-border/80 transition-shadow hover:shadow-lg group">
-                        <summary className="flex justify-between items-center cursor-pointer list-none">
-                            <div className="flex-1">
-                                <p className="font-semibold text-card-foreground">Interview on: {new Date(interview.interviewDate).toLocaleDateString()}</p>
-                                <p className="text-sm text-muted-foreground">{interview.targetRole} for {interview.targetCompany}</p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="text-right">
-                                    <p className="font-bold text-2xl text-primary font-heading">{interview.overallScore || 'N/A'}/100</p>
-                                    <p className="text-xs text-muted-foreground">Overall Score</p>
-                                </div>
-                                <ChevronDown className="group-open:rotate-180 transition-transform" />
-                            </div>
-                        </summary>
-                        <div className="mt-4 pt-4 border-t border-border">
-                            <h4 className="font-bold mb-2">Overall Feedback:</h4>
-                            <p className="text-sm text-muted-foreground mb-4 whitespace-pre-wrap">{interview.overallFeedback}</p>
-                            <h4 className="font-bold mb-2">Transcript:</h4>
-                            <div className="space-y-3 text-sm">
-                                {interview.questions.map((q) => (
-                                    <div key={q._id}>
-                                        <p className="font-semibold text-card-foreground">Q: {q.question}</p>
-                                        {q.studentRespondedAnswer ? (
-                                            <>
-                                                <p className="text-muted-foreground pl-4 border-l-2 border-primary ml-2 mt-1">A: {q.studentRespondedAnswer}</p>
-                                                {q.feedback && <p className="text-blue-500 pl-4 border-l-2 border-blue-500 ml-2 mt-1 italic">Feedback: {q.feedback}</p>}
-                                            </>
-                                        ) : (
-                                            <p className="text-muted-foreground/70 pl-4 border-l-2 border-muted ml-2 mt-1 italic">A: No answer provided.</p>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </details>
-                ))
-            ) : (
-                <div className="text-center py-10 border-2 border-dashed border-border rounded-lg"><p className="text-muted-foreground">No mock interview history. Start one to practice!</p></div>
-            )}
-        </div>
-    </Section>
-));
-
-const FeedbackLink = () => (
+const SectionCard = ({ title, icon, children, actionButton }) => (
     <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5, duration: 0.8 }}
-        className="mt-12 text-center bg-card p-6 rounded-lg border border-border shadow-md"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="bg-card border border-border rounded-lg shadow-md p-4 sm:p-6 mb-8"
     >
-        <p className="font-semibold text-lg text-card-foreground mb-3">
-            Help us improve this feature! Your feedback is valuable.
-        </p>
-        <a
-            href="https://forms.gle/FPwUorvBKKSuSjqq9"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block bg-primary text-primary-foreground font-bold py-2 px-6 rounded-md hover:bg-primary/90 transition-transform hover:scale-105"
-        >
-            Give Feedback
-        </a>
-        <p className="text-xs text-muted-foreground mt-4 max-w-xl mx-auto">
-            <strong>Disclaimer:</strong> This is a beta feature. AI-generated questions, answers, and resources may occasionally be inaccurate or incomplete. Please use this as a supplementary tool for your interview preparation.
-        </p>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+            <div className="flex items-center">
+                {icon}
+                <h3 className="text-xl font-heading font-bold text-card-foreground ml-3">{title}</h3>
+            </div>
+            {actionButton}
+        </div>
+        <div className="space-y-4">
+            {children}
+        </div>
     </motion.div>
 );
 
+// --- MAIN FEATURE COMPONENTS ---
+
+const PreparationHeader = ({ preparation }) => {
+    const navigate = useNavigate();
+    const { target, title, targetDate } = preparation;
+
+    const Countdown = () => {
+        const calculateTimeLeft = () => {
+            const difference = +new Date(targetDate) - +new Date();
+            let timeLeft = {};
+            if (difference > 0) {
+                timeLeft = {
+                    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+                    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+                    minutes: Math.floor((difference / 1000 / 60) % 60),
+                };
+            }
+            return timeLeft;
+        };
+        const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+        useEffect(() => {
+            const timer = setInterval(() => {
+                setTimeLeft(calculateTimeLeft());
+            }, 1000 * 60);
+            return () => clearInterval(timer);
+        });
+
+        return (
+            <div className="flex space-x-4">
+                {Object.keys(timeLeft).length > 0 ? (
+                    <>
+                        {timeLeft.days > 0 && <div><span className="text-3xl font-bold font-heading">{timeLeft.days}</span><span className="text-sm text-muted-foreground ml-1">days</span></div>}
+                        {timeLeft.hours > 0 && <div><span className="text-3xl font-bold font-heading">{timeLeft.hours}</span><span className="text-sm text-muted-foreground ml-1">hours</span></div>}
+                        {timeLeft.minutes > 0 && <div><span className="text-3xl font-bold font-heading">{timeLeft.minutes}</span><span className="text-sm text-muted-foreground ml-1">mins</span></div>}
+                    </>
+                ) : (
+                    <span className="text-3xl font-bold font-heading text-primary">Today! 🎉</span>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="mb-8 p-6 bg-card border border-border rounded-lg shadow-lg"
+        >
+            <button onClick={() => navigate(-1)} className="flex items-center text-sm text-primary hover:underline mb-4">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Preparations
+            </button>
+            <div className="flex flex-col md:flex-row justify-between items-start">
+                <div>
+                    <div className="flex items-center mb-2">
+                        <Target className="w-8 h-8 text-primary" />
+                        <h1 className="text-3xl md:text-4xl font-display text-foreground ml-3">{title}</h1>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-x-4 text-muted-foreground font-body">
+                        <span className="flex items-center"><Briefcase className="w-4 h-4 mr-2" /> {target.company}</span>
+                        <span className="flex items-center"><GraduationCap className="w-4 h-4 mr-2" /> {target.role}</span>
+                        <span className="flex items-center"><BarChart className="w-4 h-4 mr-2" /> {target.level}</span>
+                    </div>
+                </div>
+                <div className="text-left md:text-right mt-4 md:mt-0 w-full md:w-auto">
+                    <div className="text-md md:text-lg font-heading font-semibold text-foreground mb-2">Interview Date: {new Date(targetDate).toLocaleDateString()}</div>
+                    <Countdown />
+                </div>
+            </div>
+        </motion.div>
+    );
+};
+
+const StudyTopicsSection = ({ topics, prepId, isLoading }) => {
+    const dispatch = useDispatch();
+    const [selected, setSelected] = useState([]);
+
+    const handleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    
+    const handleDelete = () => {
+        if (selected.length > 0) {
+            dispatch(deleteStudyTopics({ id: prepId, ids: selected }));
+            setSelected([]);
+        }
+    };
+    
+    const handleGenerate = () => dispatch(generateLearningItems(prepId));
+
+    return (
+        <SectionCard
+            title="Study Topics"
+            icon={<BookOpen className="w-6 h-6 text-accent-foreground" />}
+            actionButton={
+                <div className="flex items-center flex-wrap gap-2">
+                    <button onClick={handleGenerate} disabled={isLoading} className="flex items-center px-4 py-2 text-sm font-semibold text-primary bg-primary/10 rounded-md hover:bg-primary/20 transitions disabled:opacity-50 disabled:cursor-not-allowed">
+                        {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <Sparkles className="w-4 h-4 mr-2"/>}
+                        Generate More
+                    </button>
+                    {selected.length > 0 && (
+                         <motion.button 
+                             initial={{opacity: 0, scale: 0.8}} animate={{opacity: 1, scale: 1}}
+                             onClick={handleDelete}
+                             className="flex items-center px-4 py-2 text-sm font-semibold text-destructive-foreground bg-destructive rounded-md hover:bg-destructive/90 transitions">
+                             <Trash2 className="w-4 h-4 mr-2"/> Delete ({selected.length})
+                         </motion.button>
+                    )}
+                </div>
+            }
+        >
+            <AnimatePresence>
+                {topics.map(topic => (
+                    <motion.div
+                        key={topic._id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -20, transition: {duration: 0.2} }}
+                        className="flex items-start p-4 border border-border rounded-lg bg-background hover:shadow-md transition-shadow"
+                    >
+                        <input
+                            type="checkbox"
+                            className="form-checkbox h-5 w-5 text-primary bg-input border-border rounded mt-1 mr-4 focus:ring-ring shrink-0"
+                            checked={selected.includes(topic._id)}
+                            onChange={() => handleSelect(topic._id)}
+                        />
+                        <div className="flex-grow">
+                            <h4 className="font-bold font-heading text-lg text-foreground">{topic.topic}</h4>
+                            <div className="flex items-center flex-wrap gap-2 my-2">
+                                <Pill className="bg-secondary text-secondary-foreground">{topic.category}</Pill>
+                                <Pill className="bg-accent text-accent-foreground">Priority: {topic.priority}/5</Pill>
+                            </div>
+                            <div className="mt-3">
+                                <h5 className="text-sm font-semibold text-muted-foreground mb-2">Resources:</h5>
+                                <ul className="space-y-2">
+                                    {topic.resources.map(res => (
+                                        <li key={res._id}>
+                                            <a href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center text-primary hover:underline text-sm">
+                                                <LinkIcon className="w-4 h-4 mr-2" /> {res.title} <span className="text-custom ml-2">({res.type})</span>
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </motion.div>
+                ))}
+            </AnimatePresence>
+        </SectionCard>
+    );
+};
+
+const PreparedQuestionsSection = ({ questions, prepId, isLoading }) => {
+    const dispatch = useDispatch();
+    const [selected, setSelected] = useState([]);
+    const [expanded, setExpanded] = useState(null);
+
+    const handleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    
+    const handleDelete = () => {
+        if (selected.length > 0) {
+            dispatch(deletePreparedQuestions({ id: prepId, ids: selected }));
+            setSelected([]);
+        }
+    };
+
+    const handleGenerate = () => dispatch(generateLearningItems(prepId));
+    
+    const categoryIcons = {
+        general: <FaQuestionCircle className="text-blue-500" />,
+        technical: <Code className="w-5 h-5 text-green-500" />,
+        behavioral: <Brain className="w-5 h-5 text-purple-500" />,
+        "company-specific": <FaGoogle className="text-red-500" />,
+        situational: <Lightbulb className="w-5 h-5 text-yellow-500" />,
+    };
+
+    return (
+        <SectionCard
+            title="Prepared Questions"
+            icon={<FaQuestionCircle className="w-6 h-6 text-accent-foreground" />}
+            actionButton={
+                 <div className="flex items-center flex-wrap gap-2">
+                     <button onClick={handleGenerate} disabled={isLoading} className="flex items-center px-4 py-2 text-sm font-semibold text-primary bg-primary/10 rounded-md hover:bg-primary/20 transitions disabled:opacity-50 disabled:cursor-not-allowed">
+                         {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <Sparkles className="w-4 h-4 mr-2"/>}
+                         Generate More
+                     </button>
+                     {selected.length > 0 && (
+                          <motion.button initial={{opacity: 0, scale: 0.8}} animate={{opacity: 1, scale: 1}} onClick={handleDelete} className="flex items-center px-4 py-2 text-sm font-semibold text-destructive-foreground bg-destructive rounded-md hover:bg-destructive/90 transitions">
+                              <Trash2 className="w-4 h-4 mr-2"/> Delete ({selected.length})
+                          </motion.button>
+                     )}
+                 </div>
+            }
+        >
+            <AnimatePresence>
+            {questions.map((q, index) => (
+                 <motion.div
+                     key={q._id}
+                     layout
+                     initial={{ opacity: 0 }}
+                     animate={{ opacity: 1 }}
+                     exit={{ opacity: 0 }}
+                     className="border border-border rounded-lg bg-background overflow-hidden"
+                 >
+                     <div 
+                         className="flex items-start p-4 cursor-pointer"
+                         onClick={() => setExpanded(expanded === index ? null : index)}
+                     >
+                         <input
+                             type="checkbox"
+                             className="form-checkbox h-5 w-5 text-primary bg-input border-border rounded mt-1 mr-4 focus:ring-ring shrink-0"
+                             checked={selected.includes(q._id)}
+                             onChange={(e) => { e.stopPropagation(); handleSelect(q._id); }}
+                         />
+                          <div className="flex-grow">
+                               <div className="flex items-center mb-2">
+                                   {categoryIcons[q.category] || <FaQuestionCircle />}
+                                   <span className="ml-2 text-sm capitalize text-muted-foreground">{q.category}</span>
+                               </div>
+                             <p className="font-semibold text-foreground">{q.question}</p>
+                          </div>
+                     </div>
+                     <AnimatePresence>
+                     {expanded === index && (
+                         <motion.div
+                             initial={{ height: 0, opacity: 0 }}
+                             animate={{ height: 'auto', opacity: 1 }}
+                             exit={{ height: 0, opacity: 0 }}
+                             className="px-6 pb-4 ml-8 border-l-2 border-primary"
+                         >
+                             {q.answer && <div className="prose prose-sm dark:prose-invert max-w-none mb-4" dangerouslySetInnerHTML={{ __html: `<p><strong>Answer:</strong> ${q.answer}</p>` }} />}
+                             {q.notes && <div className="prose prose-sm dark:prose-invert max-w-none bg-muted p-3 rounded-md" dangerouslySetInnerHTML={{ __html: `<strong>Notes:</strong> ${q.notes}` }} />}
+                         </motion.div>
+                     )}
+                     </AnimatePresence>
+                  </motion.div>
+            ))}
+            </AnimatePresence>
+        </SectionCard>
+    );
+};
+
+const PracticeProblemsSection = ({ problems, prepId, isLoading }) => {
+    const dispatch = useDispatch();
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const handleGenerate = () => dispatch(generatePracticeItems(prepId));
+    
+    const handleAddProblem = (problemData) => {
+        dispatch(addPracticeProblem({ id: prepId, problemData })).then(() => {
+            setIsModalOpen(false);
+        });
+    };
+
+    const difficultyColors = {
+        easy: 'bg-green-500/20 text-green-400',
+        medium: 'bg-yellow-500/20 text-yellow-400',
+        hard: 'bg-red-500/20 text-red-400',
+    };
+
+    return (
+        <>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Practice Problem">
+                <AddPracticeProblemForm onSubmit={handleAddProblem} isLoading={isLoading}/>
+            </Modal>
+            <SectionCard
+                title="Practice Problems"
+                icon={<Code className="w-6 h-6 text-accent-foreground" />}
+                actionButton={
+                    <div className="flex items-center flex-wrap gap-2">
+                        <button onClick={() => setIsModalOpen(true)} className="flex items-center px-4 py-2 text-sm font-semibold text-primary bg-primary/10 rounded-md hover:bg-primary/20 transitions">
+                            <PlusCircle className="w-4 h-4 mr-2"/> Add Problem
+                        </button>
+                        <button onClick={handleGenerate} disabled={isLoading} className="flex items-center px-4 py-2 text-sm font-semibold text-primary bg-primary/10 rounded-md hover:bg-primary/20 transitions disabled:opacity-50 disabled:cursor-not-allowed">
+                            {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <Sparkles className="w-4 h-4 mr-2"/>}
+                            Generate More
+                        </button>
+                    </div>
+                }
+            >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {problems.map(p => (
+                    <motion.a 
+                        href={p.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        key={p._id}
+                        whileHover={{ scale: 1.03, boxShadow: "var(--shadow-md)" }}
+                        className="block p-4 bg-background border border-border rounded-lg transition-shadow"
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            {p.source === 'leetcode' ? <SiLeetcode className="w-6 h-6"/> : <Code className="w-6 h-6"/>}
+                            <Pill className={difficultyColors[p.difficulty] || 'bg-gray-500/20 text-gray-400'}>
+                                {p.difficulty}
+                            </Pill>
+                        </div>
+                        <h4 className="font-bold text-foreground">{p.title}</h4>
+                    </motion.a>
+                ))}
+                </div>
+            </SectionCard>
+        </>
+    );
+};
+
+const AddPracticeProblemForm = ({ onSubmit, isLoading }) => {
+    const [formData, setFormData] = useState({ title: '', url: '', source: 'leetcode', difficulty: 'medium' });
+
+    const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit(formData);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label htmlFor="title" className="block text-sm font-medium text-muted-foreground mb-1">Title</label>
+                <input type="text" name="title" id="title" value={formData.title} onChange={handleChange} required className="w-full bg-input border border-border rounded-md px-3 py-2 focus:ring-ring focus:outline-none"/>
+            </div>
+            <div>
+                <label htmlFor="url" className="block text-sm font-medium text-muted-foreground mb-1">URL</label>
+                <input type="url" name="url" id="url" value={formData.url} onChange={handleChange} required className="w-full bg-input border border-border rounded-md px-3 py-2 focus:ring-ring focus:outline-none"/>
+            </div>
+            <div className="flex gap-4">
+                <div className="flex-1">
+                    <label htmlFor="source" className="block text-sm font-medium text-muted-foreground mb-1">Source</label>
+                    <select name="source" id="source" value={formData.source} onChange={handleChange} className="w-full bg-input border border-border rounded-md px-3 py-2 focus:ring-ring focus:outline-none">
+                        <option value="leetcode">LeetCode</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div className="flex-1">
+                    <label htmlFor="difficulty" className="block text-sm font-medium text-muted-foreground mb-1">Difficulty</label>
+                    <select name="difficulty" id="difficulty" value={formData.difficulty} onChange={handleChange} className="w-full bg-input border border-border rounded-md px-3 py-2 focus:ring-ring focus:outline-none">
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </div>
+            </div>
+            <div className="flex justify-end pt-2">
+                <button type="submit" disabled={isLoading} className="flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-md hover:bg-primary/90 disabled:opacity-50 w-32">
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Add Problem'}
+                </button>
+            </div>
+        </form>
+    );
+};
+
+const StoryBankSection = ({ stories }) => {
+    const [expanded, setExpanded] = useState(null);
+
+    return (
+        <SectionCard
+            title="Behavioral Story Bank (STAR Method)"
+            icon={<FileText className="w-6 h-6 text-accent-foreground" />}
+            actionButton={
+                <button className="flex items-center px-4 py-2 text-sm font-semibold text-primary bg-primary/10 rounded-md hover:bg-primary/20 transitions">
+                    <PlusCircle className="w-4 h-4 mr-2"/> Add Story
+                </button>
+            }
+        >
+             {stories.map((story, index) => (
+                 <div key={story._id} className="border border-border rounded-lg bg-background overflow-hidden">
+                     <h4 
+                         className="font-semibold text-foreground p-4 cursor-pointer"
+                         onClick={() => setExpanded(expanded === index ? null : index)}
+                     >
+                         {story.prompt}
+                     </h4>
+                     <AnimatePresence>
+                     {expanded === index && (
+                         <motion.div
+                             initial={{ height: 0, opacity: 0 }}
+                             animate={{ height: 'auto', opacity: 1 }}
+                             exit={{ height: 0, opacity: 0 }}
+                             className="px-4 pb-4 border-t border-border"
+                         >
+                             <div className="prose prose-sm dark:prose-invert max-w-none text-foreground">
+                                 <p><strong>Situation:</strong> {story.situation}</p>
+                                 <p><strong>Task:</strong> {story.task}</p>
+                                 <p><strong>Action:</strong> {story.action}</p>
+                                 <p><strong>Result:</strong> {story.result}</p>
+                             </div>
+                         </motion.div>
+                     )}
+                     </AnimatePresence>
+                  </div>
+             ))}
+        </SectionCard>
+    );
+};
+
+
+// --- MAIN PAGE COMPONENT ---
 
 const PreparationDetails = () => {
     const { id } = useParams();
     const dispatch = useDispatch();
-    const { currentPreparation, isLoading, isError, message } = useSelector(state => state.interviewPrep);
+    const { currentPreparation, status, error } = useSelector((state) => state.interview);
+    const [activeTab, setActiveTab] = useState('learning');
+    
+    // NEW STATE: To toggle between the details view and the live interview view
+    const [isStartingInterview, setIsStartingInterview] = useState(false);
 
     useEffect(() => {
-        if (id) {
-            dispatch(fetchPreparationById(id));
+        // When returning from an interview, refresh the data to get the latest feedback
+        if (!isStartingInterview && id) {
+            dispatch(getPreparationById(id));
         }
-    }, [id, dispatch]);
+    }, [id, dispatch, isStartingInterview]);
 
-    if (isLoading && !currentPreparation) return <Spinner />;
-    if (isError) return <ErrorMessage message={message} />;
-    if (!currentPreparation) return <ErrorMessage message="The preparation plan could not be found." />;
+    const handleStartInterview = () => {
+        setIsStartingInterview(true);
+    };
     
+    // This function will be passed to the SWEInterview component to return to this view
+    const handleExitInterview = () => {
+        setIsStartingInterview(false);
+    }
+    
+    // If the view is toggled to the interview, render it full-screen
+    if (isStartingInterview) {
+        // Pass the exit handler to the SWEInterview component
+        return <SWEInterview onExitInterview={handleExitInterview} />;
+    }
+
+    if (status === 'loading' && !currentPreparation) return <Loader />;
+    if (status === 'failed' && !currentPreparation) return <ErrorMessage message={error} />;
+    if (!currentPreparation) {
+        return <ErrorMessage message="Preparation plan not found. It might have been deleted or the ID is incorrect." />;
+    }
+
+    const isLoading = status === 'loading';
+
+    const tabs = [
+        { id: 'learning', label: 'Learning Plan', icon: <BookOpen /> },
+        { id: 'practice', label: 'Practice Zone', icon: <BrainCircuit /> },
+        { id: 'assessment', label: 'AI Assessment', icon: <Bot /> },
+    ];
+
     return (
-        <div className="bg-background text-foreground min-h-screen">
-            <main className="container mx-auto p-2 sm:p-4 md:p-6 lg:p-8">
-                <PlanHeader plan={currentPreparation} />
-                {/* --- ADDED HOW-TO GUIDE --- */}
-                <HowToUseGuide />
-                <QuestionsSection plan={currentPreparation} />
-                <ResourcesSection plan={currentPreparation} />
-                <InterviewsSection plan={currentPreparation} />
-                <FeedbackLink />
+        <div className="p-4 md:p-8 bg-background min-h-screen text-foreground">
+            <PreparationHeader preparation={currentPreparation} />
+
+            <div className="mb-6 border-b border-border">
+                 <nav className="flex space-x-2 md:space-x-4 custom-scrollbar pb-1 -mb-px overflow-x-auto" aria-label="Tabs">
+               <div className='flex mb-2 '>
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`relative flex items-center px-3 py-3 text-sm md:text-base font-bold font-heading whitespace-nowrap
+                                ${activeTab === tab.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`
+                            }
+                        >
+                            <span className="mr-2">{tab.icon}</span>
+                            {tab.label}
+                            {activeTab === tab.id && (
+                                <motion.div
+                                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                                    layoutId="underline"
+                                />
+                            )}
+                        </button>
+                    ))}
+               </div>
+                </nav>
+            </div>
+
+            <main>
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={activeTab}
+                        initial={{ y: 10, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: -10, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {activeTab === 'learning' && (
+                            <div className="flex flex-col md:flex-row gap-8">
+                                <div className="flex-1"><StudyTopicsSection topics={currentPreparation.learning.studyTopics} prepId={currentPreparation.id} isLoading={isLoading}/></div>
+                                <div className="flex-1"><PreparedQuestionsSection questions={currentPreparation.learning.preparedQuestions} prepId={currentPreparation.id} isLoading={isLoading}/></div>
+                            </div>
+                        )}
+                        {activeTab === 'practice' && (
+                            <div className="flex flex-col md:flex-row gap-8">
+                                <div className="flex-1"><PracticeProblemsSection problems={currentPreparation.practice.practiceProblems} prepId={currentPreparation.id} isLoading={isLoading} /></div>
+                                <div className="flex-1"><StoryBankSection stories={currentPreparation.practice.storyBank} /></div>
+                            </div>
+                        )}
+                        {activeTab === 'assessment' && (
+                             <SectionCard
+                                 title="Mock Interviews"
+                                 icon={<Bot className="w-6 h-6 text-accent-foreground" />}
+                             >
+                                 <div className="text-center p-8 bg-background rounded-lg">
+                                     <h4 className="text-lg font-bold font-heading mb-2">Ready to test your skills?</h4>
+                                     <p className="text-muted-foreground mb-6">Start a mock interview with our AI to get real-time feedback and improve your performance.</p>
+                                     <button 
+                                        onClick={handleStartInterview}
+                                        className="px-6 py-3 font-semibold text-primary-foreground bg-primary rounded-lg shadow-md hover:bg-primary/90 transition-all transform hover:scale-105"
+                                    >
+                                         Start AI Mock Interview
+                                     </button>
+                                 </div>
+                                 <div className="mt-8">
+                                     <h4 className="font-bold font-heading mb-4">Past Interviews</h4>
+                                     {currentPreparation.assessment.aiMockInterviews.length === 0 ? (
+                                         <p className="text-custom text-center py-4">No mock interviews completed yet.</p>
+                                     ) : (
+                                        <div className="space-y-3">
+                                            {currentPreparation.assessment.aiMockInterviews.slice().reverse().map(interview => (
+                                                <div key={interview._id} className="flex items-center justify-between p-4 bg-background border border-border rounded-lg">
+                                                    <div>
+                                                        <p className="font-semibold">{new Date(interview.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                                        <p className="text-sm text-muted-foreground capitalize">{interview.type ? interview.type.replace('-', ' ') : 'General'} Interview</p>
+                                                    </div>
+                                                    {interview.aiFeedback?.overallScore && (
+                                                        <div className="flex items-center gap-2 text-primary font-bold">
+                                                            <Trophy className="w-5 h-5"/>
+                                                            <span>{interview.aiFeedback.overallScore}%</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                     )}
+                                 </div>
+                             </SectionCard>
+                        )}
+                    </motion.div>
+                </AnimatePresence>
             </main>
         </div>
     );

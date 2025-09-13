@@ -53,10 +53,10 @@ export const store = configureStore({
     studentProfile: studentProfileReducer,
     liveClasses: liveClassSliceReducer,
     contact:contactReducer,
-    interviewPrep:interviewsReducer,
+    interview:interviewsReducer,
      resume: resumeReducer,
      ats:atsReducer,
-     learningRoadmap:roadmapsReducer,
+     roadmaps:roadmapsReducer,
   },
 });
 

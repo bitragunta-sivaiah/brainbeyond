@@ -9,6 +9,8 @@ import ManageSubscriptions from "@/components/ManageSubscriptions";
  
 import MyCourses from "@/components/MyCourses";
 import Policy from "@/components/Policy";
+import RoadmapDetails from "@/components/RoadmapDetails";
+import Roadmaps from "@/components/Roadmaps";
 import SettingsPage from "@/components/SettingsPage";
  
 import Subscription from "@/components/Subscription";
@@ -109,7 +111,7 @@ export const router = createBrowserRouter([
             { path: 'settings/change-password', element: <ChangePassword /> },
             { path: 'student/interview-prep', element: <InterviewPreparationManager /> },
             { path: 'interview-prep/:id', element: <PreparationDetailPage /> },
-            { path: 'interview-prep/session/:planId', element: <StartInterview /> },
+            { path: 'interview-prep/session/:id', element: <StartInterview /> },
             { path: 'notifications', element: <Notification /> },
             { path: 'blogs/:slug', element: <BlogDetails /> },
             { path: 'blog', element: <Blogs /> },
@@ -129,6 +131,8 @@ export const router = createBrowserRouter([
 
             // Course Related Public Routes
             { path: 'courses', element: <AllCourses /> },
+            { path: 'roadmaps', element: <Roadmaps /> },
+            { path: 'roadmap/:slug', element: <RoadmapDetails /> },
             { path: 'student/resume-builder', element: <CreateResumePage /> },
             { path: 'resumes/builder/:id', element: <CreateResumePage /> },
             { path: 'student/my-resumes', element: <MyResumes /> },

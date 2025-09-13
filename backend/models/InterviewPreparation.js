@@ -1,208 +1,240 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 /**
- * @description Sub-schema for individual questions in the preparation plan.
+ * @description Represents a comprehensive, multi-stage preparation plan for a specific job interview.
+ * This model is structured to support an initial user setup followed by AI-driven content generation for learning, practice, and assessment.
  */
-const QuestionSchema = new mongoose.Schema({
-    question: {
-        type: String,
-        required: [true, 'Question text is required.'],
-        trim: true,
-    },
-    difficulty: {
-        type: String,
-        enum: ['easy', 'medium', 'hard'],
-        default: 'medium',
-    },
-    answer: { // The user's own answer or notes
-        type: String,
-        trim: true,
-    },
-    isPinned: { // To mark important questions
-        type: Boolean,
-        default: false,
-    },
-    aiGeneratedAnswers: [{ // For storing alternative, AI-generated answers
-        type: String,
-        trim: true,
-    }],
-});
-
-/**
- * @description Sub-schema for study resources like articles, videos, etc.
- */
-const StudyResourceSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: [true, 'Resource name is required.'],
-        trim: true,
-    },
-    url: {
-        type: String,
-        required: [true, 'Resource URL is required.'],
-        trim: true,
-    },
-    type: {
-        type: String,
-        enum: ['article', 'video', 'course', 'documentation', 'book', 'other'],
-        default: 'article',
-    },
-    isPinned: {
-        type: Boolean,
-        default: false,
-    },
-    recommendation: { // AI's or user's rating for the resource
-        type: String,
-        enum: ['best', 'good', 'average', 'poor'],
-        default: 'average',
-    },
-    recommendedOrder: { // Recommended order to learn the resource
-        type: Number,
-    },
-});
-
-/**
- * @description Schema for a question bank managed by admins.
- */
-const AdminQuestionSchema = new mongoose.Schema({
-    question: {
-        type: String,
-        required: [true, 'Question text is required.'],
-        trim: true,
-    },
-    targetCompany: {
-        type: String,
-        trim: true,
-        default: 'General',
-        index: true,
-    },
-    targetRole: {
-        type: String,
-        required: [true, 'Target role is required.'],
-        trim: true,
-        index: true,
-    },
-    difficulty: {
-        type: String,
-        enum: ['easy', 'medium', 'hard'],
-        default: 'medium',
-    },
-    topicsCovered: [{
-        type: String,
-        trim: true,
-    }],
-}, { timestamps: true });
-
-AdminQuestionSchema.index({ targetCompany: 1, targetRole: 1 });
-
-/**
- * @description Sub-schema for a single question-answer pair within an AI mock interview.
- */
-const AiMockInterviewQuestionSchema = new mongoose.Schema({
-    question: {
-        type: String,
-        required: true,
-    },
-    sourceQuestion: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'AdminQuestion',
-    },
-    studentRespondedAnswer: {
-        type: String,
-    },
-    feedback: {
-        type: String,
-        trim: true,
-    },
-    rating: {
-        type: String,
-        enum: ['excellent', 'good', 'fair', 'needs-improvement'],
-    },
-});
-
-/**
- * @description Sub-schema for a full AI mock interview session.
- */
-const AiMockInterviewSchema = new mongoose.Schema({
-    interviewDate: {
-        type: Date,
-        default: Date.now,
-    },
-    type: {
-        type: String,
-        enum: ['resume-based', 'role-based', 'general'],
-        default: 'general',
-    },
-    targetRole: {
-        type: String,
-        trim: true,
-    },
-    targetCompany: {
-        type: String,
-        trim: true,
-    },
-    resumeFile: {
-        data: Buffer,
-        contentType: String,
-    },
-    overallFeedback: {
-        type: String,
-        trim: true,
-    },
-    overallScore: {
-        type: Number,
-        min: 0,
-        max: 100,
-    },
-    questions: [AiMockInterviewQuestionSchema],
-});
-
-/**
- * @description Main schema for the Interview Preparation plan.
- */
-const InterviewPreparationSchema = new mongoose.Schema({
+const interviewPreparationSchema = new mongoose.Schema(
+  {
+    // --- STAGE 1: CORE DETAILS & OWNERSHIP (User Input) ---
     user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true,
-        index: true,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
     },
     title: {
-        type: String,
-        required: [true, 'A title for your preparation plan is required.'],
-        trim: true,
-        maxlength: [150, 'Title cannot be more than 150 characters.'],
+      type: String,
+      required: [true, "A title for your preparation plan is required."],
+      trim: true,
+      maxlength: 150,
+      default: "My Interview Prep Plan",
     },
-    targetRole: {
-        type: String,
-        required: [true, 'Target role is required.'],
-        trim: true,
+    description: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
     },
-    targetCompany: {
-        type: String,
-        trim: true,
-        default: 'Any',
+    target: {
+      company: { type: String, required: true, trim: true },
+      role: { type: String, required: true, trim: true },
+      level: { type: String, trim: true, default: "Entry-level" },
+      location: { type: String, trim: true },
     },
-    experienceLevel: {
-        type: String,
-        enum: ['fresher', '1-3 years', '3-5 years', '5+ years'],
-        required: [true, 'Experience level is required.'],
+    startDate: { type: Date, default: Date.now },
+    targetDate: { type: Date },
+    generalNotes: [
+      {
+        content: String,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+
+    // --- STAGE 2: LEARNING & KNOWLEDGE ACQUISITION (AI-Generated & User-Managed) ---
+    learning: {
+      studyTopics: [
+        {
+          topic: { type: String, required: true, trim: true },
+          category: {
+            type: String,
+            enum: [
+              "data-structures",
+              "algorithms",
+              "system-design",
+              "behavioral",
+              "domain-knowledge",
+              "company-values",
+            ],
+            required: true,
+          },
+          lastReviewed: Date,
+          resources: [
+            {
+              title: String,
+              url: String,
+              type: {
+                type: String,
+                enum: ["article", "video", "course", "documentation", "book"],
+              },
+              userNotes: { type: String, maxlength: 500 },
+            },
+          ],
+          priority: { type: Number, min: 1, max: 5, default: 3 },
+        },
+      ],
+      preparedQuestions: [
+        {
+          question: { type: String, required: true, trim: true },
+          answer: { type: String, trim: true },
+          notes: { type: String, trim: true },
+          category: {
+            type: String,
+            enum: [
+              "behavioral",
+              "technical",
+              "situational",
+              "company-specific",
+              "general",
+            ],
+            required: true,
+          },
+          lastRevised: { type: Date, default: Date.now },
+          timeSpentMinutes: { type: Number, default: 0 },
+          keywords: [String],
+        },
+      ],
     },
-    status: {
-        type: String,
-        enum: ['not-started', 'in-progress', 'completed'],
-        default: 'not-started',
+
+    // --- STAGE 3: SKILL APPLICATION & PRACTICE (AI-Generated & User-Managed) ---
+    practice: {
+      practiceProblems: [
+        {
+          title: { type: String, required: true },
+          url: { type: String, required: true },
+          source: {
+            type: String,
+            enum: ["leetcode", "hackerrank", "codewars", "custom", "other"],
+            default: "other",
+          },
+          difficulty: {
+            type: String,
+            enum: ["easy", "medium", "hard"],
+            required: true,
+          },
+          attempts: [
+            {
+              date: { type: Date, default: Date.now },
+              timeTakenMinutes: Number,
+              outcome: {
+                type: String,
+                enum: ["solved-optimal", "solved-suboptimal", "unsolved"],
+              },
+              solution: { code: String, language: String, notes: String },
+            },
+          ],
+        },
+      ],
+      storyBank: [
+        {
+          prompt: { type: String, required: true },
+          situation: { type: String, required: true },
+          task: { type: String, required: true },
+          action: { type: String, required: true },
+          result: { type: String, required: true },
+          keywords: [String],
+        },
+      ],
     },
-    topics: [{
-        type: String,
-        trim: true,
-    }],
-    questions: [QuestionSchema],
-    studyResources: [StudyResourceSchema],
-    aiMockInterviews: [AiMockInterviewSchema],
-}, {
+
+    // --- STAGE 4: ASSESSMENT & FEEDBACK (AI-Powered) ---
+    assessment: {
+      aiMockInterviews: [
+        {
+          date: { type: Date, default: Date.now },
+          type: {
+            type: String,
+            enum: [
+              "behavioral",
+              "technical-quiz",
+              "coding-challenge",
+              "system-design",
+              "role-based",
+              "resume-based",
+            ],
+            required: true,
+          },
+          resumeUrl: {
+            type: String,
+            required: function () {
+              return this.type === "resume-based";
+            },
+          },
+          focusArea: String,
+          difficulty: {
+            type: String,
+            enum: ["easy", "medium", "hard"],
+            default: "medium",
+          },
+          interviewDurationSeconds: { type: Number },
+          sessionRecordingUrl: String,
+          transcript: [
+            {
+              speaker: { type: String, enum: ["ai", "user"], required: true },
+              content: { type: String, required: true },
+              timestamp: { type: Date, required: true },
+            },
+          ],
+          aiFeedback: {
+            overallScore: { type: Number, min: 0, max: 100 },
+            performanceSummary: String,
+            contentAnalysis: {
+              clarity: {
+                score: { type: Number, min: 0, max: 10 },
+                feedback: String,
+              },
+              conciseness: {
+                score: { type: Number, min: 0, max: 10 },
+                feedback: String,
+              },
+              technicalAccuracy: {
+                score: { type: Number, min: 0, max: 10 },
+                feedback: String,
+              },
+              useOfKeywords: [String],
+            },
+            communicationAnalysis: {
+              pacing: {
+                type: String,
+                enum: ["too-slow", "good", "too-fast"],
+              },
+              fillerWords: {
+                count: { type: Number, default: 0 },
+                words: [String],
+              },
+              confidenceLevel: {
+                type: String,
+                enum: ["low", "medium", "high"],
+              },
+            },
+            suggestedAnswers: [{ question: String, suggestedAnswer: String }],
+          },
+        },
+      ],
+    },
+  },
+  {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
+);
+
+// --- VIRTUAL PROPERTIES ---
+
+interviewPreparationSchema.virtual("daysRemaining").get(function () {
+  if (!this.targetDate) return null;
+  const today = new Date();
+  const target = new Date(this.targetDate);
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  const diffTime = target.getTime() - today.getTime();
+  if (diffTime < 0) return 0;
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 });
 
-export const InterviewPreparation = mongoose.model('InterviewPreparation', InterviewPreparationSchema);
-export const AdminQuestion = mongoose.model('AdminQuestion', AdminQuestionSchema);
+const InterviewPreparation = mongoose.model(
+  "InterviewPreparation",
+  interviewPreparationSchema
+);
+
+export default InterviewPreparation;

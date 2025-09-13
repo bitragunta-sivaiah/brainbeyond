@@ -1,762 +1,510 @@
 import express from 'express';
-import axios from 'axios';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
-import streamifier from 'streamifier';
-import { protect } from '../middleware/authMiddleware.js';
-import { AdminQuestion, InterviewPreparation } from '../models/InterviewPreparation.js';
-
-// --- IMPORTS FOR FILE PARSING ---
 import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import Tesseract from 'tesseract.js';
 
-dotenv.config();
-const router = express.Router();
+import { protect } from '../middleware/authMiddleware.js';
+import InterviewPreparation from '../models/InterviewPreparation.js';
 
-// --- CONFIGURATION ---
+// --- CONFIGURATIONS ---
+
+// 1. Cloudinary Setup
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// Use Multer's memory storage to handle file buffer directly
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB file size limit
+});
 
+// 2. Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-// --- CORRECTION: Using the correct and latest model name for stability and access. ---
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
 
-// =================================================================
+// Added required worker configuration for pdfjs-dist on the server
+pdfjsLib.GlobalWorkerOptions.workerSrc = `../../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs`;
+
+
 // --- HELPER FUNCTIONS ---
-// =================================================================
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
- * @description Retries an async function with exponential backoff for handling 503 errors.
- * @param {Function} asyncFn The async function to retry (e.g., an API call).
- * @param {number} retries Maximum number of retries.
- * @param {number} delay Initial delay in milliseconds.
- * @returns {Promise<any>} The result of the successful async function call.
+ * Calls the Gemini API with a given prompt.
+ * @param {string} prompt The prompt to send to the AI.
+ * @returns {Promise<object>} The parsed JSON response from the AI.
  */
-const retryWithBackoff = async (asyncFn, retries = 3, delay = 1000) => {
-    for (let i = 0; i < retries; i++) {
-        try {
-            return await asyncFn(); // Attempt the function
-        } catch (error) {
-            // Check if it's the specific 503 "overloaded" error
-            if (error.response && error.response.status === 503) {
-                if (i < retries - 1) {
-                    console.log(`Model overloaded. Retrying in ${delay / 1000}s... (Attempt ${i + 1}/${retries - 1})`);
-                    await sleep(delay);
-                    delay *= 2; // Double the delay for the next attempt
-                } else {
-                    console.error("All retry attempts failed. The model remains overloaded.");
-                    throw error; // If all retries fail, throw the original error
-                }
-            } else {
-                // For any other error, throw it immediately without retrying
-                throw error;
-            }
+const callGemini = async (prompt) => {
+    const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+    };
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("Gemini API Error:", errorBody);
+            throw new Error(`Gemini API request failed with status ${response.status}`);
         }
+        const data = await response.json();
+        
+        if (!data.candidates || !data.candidates[0].content.parts[0].text) {
+             throw new Error('Invalid response structure from AI service.');
+        }
+
+        const rawJsonString = data.candidates[0].content.parts[0].text;
+        const cleanedJsonString = rawJsonString.replace(/```json\n?|```/g, '').trim();
+        return JSON.parse(cleanedJsonString);
+    } catch (error) {
+        console.error('Error calling Gemini API:', error);
+        throw new Error('Failed to communicate with AI service.');
     }
 };
 
+const extractTextFromBuffer = async (buffer, mimetype) => {
+    if (mimetype === 'application/pdf') {
+        const data = new Uint8Array(buffer);
+        const doc = await pdfjsLib.getDocument(data).promise;
+        let text = '';
+        for (let i = 1; i <= doc.numPages; i++) {
+            const page = await doc.getPage(i);
+            const content = await page.getTextContent();
+            text += content.items.map(item => item.str).join(' ');
+        }
+        return text;
+    }
+    if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const { value } = await mammoth.extractRawText({ buffer });
+        return value;
+    }
+    throw new Error('Unsupported file type for text extraction.');
+};
 
-const uploadToCloudinary = (buffer) => {
+const uploadBufferToCloudinary = (buffer) => {
     return new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
-            { resource_type: 'auto' },
+            { resource_type: 'raw', folder: 'interview_resumes' },
             (error, result) => {
                 if (error) reject(error);
                 else resolve(result);
             }
         );
-        streamifier.createReadStream(buffer).pipe(uploadStream);
+        uploadStream.end(buffer);
     });
 };
 
-const extractTextFromResume = async (file) => {
-    const { buffer, mimetype } = file;
+
+// --- ROUTER SETUP ---
+const router = express.Router();
+router.use(protect); // Protect all subsequent routes
+
+// Middleware to fetch and authorize access to a preparation document
+const getPreparation = async (req, res, next) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid ID format.' });
+    }
     try {
-        if (mimetype === 'application/pdf') {
-            const data = new Uint8Array(buffer);
-            const pdf = await pdfjsLib.getDocument({ data }).promise;
-            let textContent = '';
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const text = await page.getTextContent();
-                textContent += text.items.map(s => s.str).join(' ');
-            }
-            return textContent;
+        req.preparation = await InterviewPreparation.findOne({ _id: req.params.id, user: req.user._id });
+        if (!req.preparation) {
+            return res.status(404).json({ success: false, message: 'Preparation plan not found or you are not authorized.' });
         }
-        if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-            const { value } = await mammoth.extractRawText({ buffer });
-            return value;
-        }
-        if (mimetype.startsWith('image/')) {
-            const { data: { text } } = await Tesseract.recognize(buffer, 'eng');
-            return text;
-        }
-        console.warn(`Unsupported file type for text extraction: ${mimetype}`);
-        return '';
+        next();
     } catch (error) {
-        console.error(`Error extracting text from ${mimetype}:`, error);
-        throw new Error('Failed to read resume file content.');
+        res.status(500).json({ success: false, message: 'Server error while fetching document.' });
     }
 };
 
-const generateFirstQuestion = async ({ type, targetRole, targetCompany, resumeText = '' }) => {
-    let firstQuestion = "Let's begin. Can you start by telling me a little about yourself and why you're interested in this role?";
-    let sourceQuestionId = null;
 
-    if (type === 'resume-based' && resumeText) {
-        const prompt = `
-            You are an expert technical recruiter starting an interview for a "${targetRole}" role at "${targetCompany}".
-            Based on the candidate's resume text below, craft a single, specific, and insightful opening question.
-            Do NOT ask a generic "tell me about yourself." Pick a specific project or technology and ask them to elaborate.
+// --- CORE CRUD ROUTES FOR INTERVIEW PREPARATION ---
 
-            Resume Text:
-            ---
-            ${resumeText.substring(0, 4000)}
-            ---
+// CREATE a new Interview Preparation (with AI-generated learning plan)
+router.post('/', async (req, res) => {
+    const { title, target, targetDate, description } = req.body;
+    if (!title || !target || !target.role || !target.company) {
+        return res.status(400).json({ success: false, message: 'Title and target (role, company) are required.' });
+    }
+    try {
+        const creationPrompt = `
+        You are an expert career coach. Generate a comprehensive interview preparation plan in a single JSON object for:
+        - Role: "${target.role}", Company: "${target.company}", Level: "${target.level || 'any'}"
 
-            Your output must be a valid JSON object with one key: "question".
-        `;
-        const result = await generateAiResponse(prompt);
-        firstQuestion = result.question;
-    } else if (type === 'role-based') {
-        const adminQuestion = await AdminQuestion.findOne({
-            targetCompany: new RegExp(targetCompany, 'i'),
-            targetRole: new RegExp(targetRole, 'i'),
+        The root JSON object must have "learning" and "practice" keys. Adhere STRICTLY to the following rules:
+
+        1. "learning" Object NOte:Dont repeat the same topic or question in both sections:
+           - "studyTopics": Array of 8-10 topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
+             - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
+             - 'priority' MUST BE a Number from 1 to 5.
+           - "resources": Array of 1-2 objects per topic. Each object MUST have 'title', 'url', and 'type'.
+             - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
+           - "preparedQuestions": Array of 8-10 questions. Each object MUST have 'question', 'category', and 'keywords'. For all questions, also provide 'answer' and 'notes' (using simple HTML).
+             - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
+
+        2. "practice" Object:
+           - "practiceProblems": Array of 2-3 coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
+             - 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'.
+             - 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
+           - "storyBank": Array of 5-6 behavioral prompts and fill all details on that prompt , situation , task, action , result and keywords. Each object MUST have: 'prompt', 'situation', 'task', 'action', 'result', and 'keywords'. For ONE prompt, provide a detailed example.  .
+
+        Output ONLY the raw JSON object. Do not use any markdown formatting.`;
+
+        const aiGeneratedPlan = await callGemini(creationPrompt);
+
+        if (!aiGeneratedPlan.learning || !aiGeneratedPlan.practice) {
+            throw new Error('AI failed to generate a valid learning and practice plan.');
+        }
+
+        const newPreparation = await InterviewPreparation.create({
+            user: req.user._id, title, target, targetDate, description,
+            learning: aiGeneratedPlan.learning,
+            practice: aiGeneratedPlan.practice,
+            assessment: { aiMockInterviews: [] }
         });
-
-        if (adminQuestion) {
-            firstQuestion = adminQuestion.question;
-            sourceQuestionId = adminQuestion._id;
-        } else {
-            const prompt = `
-                You are an expert interviewer for a "${targetRole}" position at "${targetCompany}".
-                Generate a relevant opening technical or behavioral question.
-                Your output must be a valid JSON object with one key: "question".
-            `;
-            const result = await generateAiResponse(prompt);
-            firstQuestion = result.question;
-        }
-    }
-    return { question: firstQuestion, sourceQuestionId };
-};
-
-const checkOwnership = (doc, userId) => {
-    return doc.user.toString() === userId.toString();
-};
-
-const handleGenerativeAIError = (error, res) => {
-    console.error('Google Generative AI Error:', error.response ? error.response.data : error.message);
-    if (error.response) {
-        const { code, message } = error.response.data.error || {};
-        return res.status(code || 500).json({ message: message || 'An error occurred with the AI generation service.' });
-    }
-    res.status(500).json({ message: 'An unknown error occurred with the AI service.' });
-};
-
-// --- CORRECTED: This function now includes the retry logic ---
-const generateAiResponse = async (prompt) => {
-    const payload = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { response_mime_type: "application/json" }
-    };
-    
-    // Define the API call as a function that can be passed to the retry helper
-    const apiCall = () => axios.post(GEMINI_API_URL, payload);
-
-    try {
-        // Wrap the API call with our new retry logic
-        const response = await retryWithBackoff(apiCall);
-
-        const responseText = response.data.candidates[0].content.parts[0].text;
-        const cleanedText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        
-        try {
-            return JSON.parse(cleanedText);
-        } catch (parseError) {
-            console.error("AI returned non-JSON response after cleaning:", cleanedText);
-            if (cleanedText !== responseText) console.error("Original AI response was:", responseText);
-            throw new Error("The AI service returned an invalid response format.");
-        }
+        res.status(201).json({ success: true, data: newPreparation });
     } catch (error) {
-        // This will now only be called after all retries have failed, or for non-503 errors
-        throw error;
-    }
-};
-
-// =================================================================
-// --- ADMIN QUESTION BANK CRUD ---
-// (This section is unchanged and correct)
-// =================================================================
-
-router.post('/admin/questions', protect, async (req, res) => {
-    try {
-        const { question, targetCompany, targetRole, difficulty, topicsCovered } = req.body;
-        if (!question || !targetRole) {
-            return res.status(400).json({ message: 'Question text and target role are required.' });
-        }
-        const newQuestion = new AdminQuestion({ question, targetCompany, targetRole, difficulty, topicsCovered });
-        const savedQuestion = await newQuestion.save();
-        res.status(201).json(savedQuestion);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error("Error creating preparation:", error);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
-router.get('/admin/questions', protect, async (req, res) => {
+// GET ALL Interview Preparations for the user
+router.get('/', async (req, res) => {
     try {
-        const { company, role } = req.query;
-        const filter = {};
-        if (company) filter.targetCompany = new RegExp(company, 'i');
-        if (role) filter.targetRole = new RegExp(role, 'i');
-        const questions = await AdminQuestion.find(filter).sort({ createdAt: -1 });
-        res.json(questions);
+        const preparations = await InterviewPreparation.find({ user: req.user._id }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, count: preparations.length, data: preparations });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        res.status(500).json({ success: false, message: 'Server error retrieving preparation plans.' });
     }
 });
 
-router.put('/admin/questions/:questionId', protect, async (req, res) => {
+// GET a single Interview Preparation
+router.get('/:id', getPreparation, (req, res) => {
+    res.status(200).json({ success: true, data: req.preparation });
+});
+
+// UPDATE a single Interview Preparation
+router.put('/:id', getPreparation, async (req, res) => {
     try {
-        const updatedQuestion = await AdminQuestion.findByIdAndUpdate(req.params.questionId, req.body, { new: true, runValidators: true });
-        if (!updatedQuestion) {
-            return res.status(404).json({ message: 'Question not found.' });
-        }
-        res.json(updatedQuestion);
+        const updatedPreparation = await InterviewPreparation.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+        res.status(200).json({ success: true, data: updatedPreparation });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        res.status(400).json({ success: false, message: error.message });
     }
 });
 
-router.post('/admin/questions/bulk-delete', protect, async (req, res) => {
+// DELETE a single Interview Preparation
+router.delete('/:id', getPreparation, async (req, res) => {
     try {
-        const { ids } = req.body;
-        if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            return res.status(400).json({ message: 'Please provide an array of question IDs to delete.' });
-        }
-        const result = await AdminQuestion.deleteMany({ _id: { $in: ids } });
-        res.json({ message: `${result.deletedCount} questions deleted successfully.` });
+        await req.preparation.deleteOne();
+        res.status(200).json({ success: true, message: 'Preparation plan deleted.' });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-// =================================================================
-// --- USER PREPARATION PLAN CRUD ---
-// (This section is unchanged and correct)
-// =================================================================
-
-router.get('/', protect, async (req, res) => {
-    try {
-        const preparations = await InterviewPreparation.find({ user: req.user.id }).sort({ createdAt: -1 });
-        res.json(preparations);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.post('/', protect, async (req, res) => {
-    try {
-        const { title, targetRole, experienceLevel } = req.body;
-        if (!title || !targetRole || !experienceLevel) {
-            return res.status(400).json({ message: 'Title, target role, and experience level are required.' });
-        }
-        const newPlan = new InterviewPreparation({ ...req.body, user: req.user.id });
-        const savedPlan = await newPlan.save();
-        res.status(201).json(savedPlan);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.get('/:id', protect, async (req, res) => {
-    try {
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan) return res.status(404).json({ message: 'Preparation plan not found.' });
-        if (!checkOwnership(plan, req.user.id)) return res.status(403).json({ message: 'User not authorized.' });
-        res.json(plan);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.put('/:id', protect, async (req, res) => {
-    try {
-        let plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan) return res.status(404).json({ message: 'Preparation plan not found.' });
-        if (!checkOwnership(plan, req.user.id)) return res.status(403).json({ message: 'User not authorized.' });
-
-        plan = await InterviewPreparation.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-        res.json(plan);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.delete('/:id', protect, async (req, res) => {
-    try {
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan) return res.status(404).json({ message: 'Preparation plan not found.' });
-        if (!checkOwnership(plan, req.user.id)) return res.status(403).json({ message: 'User not authorized.' });
-
-        await plan.deleteOne();
-        res.json({ message: 'Preparation plan removed successfully.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.post('/bulk-delete', protect, async (req, res) => {
-    try {
-        const { ids } = req.body;
-        if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            return res.status(400).json({ message: 'Please provide an array of plan IDs to delete.' });
-        }
-        const result = await InterviewPreparation.deleteMany({ _id: { $in: ids }, user: req.user.id });
-        res.json({ message: `${result.deletedCount} plans deleted successfully.` });
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-// =================================================================
-// --- SUB-DOCUMENT MANAGEMENT (Questions & Resources) ---
-// (This section is unchanged and correct)
-// =================================================================
-
-router.post('/:id/questions/bulk-delete', protect, async (req, res) => {
-    try {
-        const { questionIds } = req.body;
-        if (!questionIds || !Array.isArray(questionIds)) return res.status(400).json({ message: 'Please provide an array of question IDs.' });
-
-        const plan = await InterviewPreparation.findOneAndUpdate(
-            { _id: req.params.id, user: req.user.id },
-            { $pull: { questions: { _id: { $in: questionIds } } } },
-            { new: true }
-        );
-        if (!plan) return res.status(404).json({ message: 'Plan not found or not authorized.' });
-        res.json({ message: 'Questions removed.', plan });
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.patch('/:id/questions/:questionId/toggle-pin', protect, async (req, res) => {
-    try {
-        const plan = await InterviewPreparation.findOne({ _id: req.params.id, user: req.user.id });
-        if (!plan) return res.status(404).json({ message: 'Plan not found or not authorized.' });
-
-        const question = plan.questions.id(req.params.questionId);
-        if (!question) return res.status(404).json({ message: 'Question not found in this plan.' });
-
-        question.isPinned = !question.isPinned;
-        await plan.save();
-        res.json(plan);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.post('/:id/resources/bulk-delete', protect, async (req, res) => {
-    try {
-        const { resourceIds } = req.body;
-        if (!resourceIds || !Array.isArray(resourceIds)) return res.status(400).json({ message: 'Please provide an array of resource IDs.' });
-
-        const plan = await InterviewPreparation.findOneAndUpdate(
-            { _id: req.params.id, user: req.user.id },
-            { $pull: { studyResources: { _id: { $in: resourceIds } } } },
-            { new: true }
-        );
-
-        if (!plan) return res.status(404).json({ message: 'Plan not found or not authorized.' });
-        res.json({ message: 'Resources removed.', plan });
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
-    }
-});
-
-router.put('/:id/resources/:resourceId', protect, async (req, res) => {
-    try {
-        const plan = await InterviewPreparation.findOne({ _id: req.params.id, user: req.user.id });
-        if (!plan) return res.status(404).json({ message: 'Plan not found or not authorized.' });
-
-        const resource = plan.studyResources.id(req.params.resourceId);
-        if (!resource) return res.status(404).json({ message: 'Resource not found in this plan.' });
-
-        Object.assign(resource, req.body);
-        await plan.save();
-        res.json(plan);
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        res.status(500).json({ success: false, message: 'Server error while deleting.' });
     }
 });
 
 
-// =================================================================
-// --- AI MOCK INTERVIEW & CONTENT GENERATION ---
-// (This section is unchanged and correct)
-// =================================================================
+// --- LEARNING SECTION: GENERATE MORE & BATCH DELETE ROUTES ---
 
-router.post('/:id/start-interview', protect, upload.single('resume'), async (req, res) => {
+// GENERATE MORE learning items for an existing plan
+router.post('/:id/learning/generate', getPreparation, async (req, res) => {
     try {
-        const { type, targetCompany, targetRole } = req.body;
-        if (!type) return res.status(400).json({ message: "Interview type is required." });
+        const existingTopics = req.preparation.learning.studyTopics.map(t => t.topic).join('; ');
+        const existingQuestions = req.preparation.learning.preparedQuestions.map(q => q.question).join('; ');
 
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan || !checkOwnership(plan, req.user.id)) {
-            return res.status(404).json({ message: 'Plan not found or not authorized.' });
+        const generateMorePrompt = `
+        You are an expert career coach helping a user expand their interview plan for a "${req.preparation.target.role}" role.
+        The user already has these study topics: [${existingTopics}] and prepared questions: [${existingQuestions}].
+
+        Your task is to generate NEW, ADDITIONAL learning items that are NOT in the lists above.
+        Generate a single JSON object with a "learning" key. Adhere STRICTLY to the following rules:
+
+        "learning" Object NOte:Dont repeat the same topic or question in both sections:
+          - "studyTopics": Array of 3-4 NEW topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
+            - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
+            - 'priority' MUST BE a Number from 1 to 5.
+          - "resources": Array of 3 objects per topic. Each MUST have 'title', 'url', and 'type'.
+            - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
+          - "preparedQuestions": Array of 4-5 NEW questions. Each MUST have 'question','name','notes 'category', and 'keywords'.
+            - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
+
+        Output ONLY the raw JSON object.`;
+
+        const aiResponse = await callGemini(generateMorePrompt);
+
+        if (!aiResponse.learning || (!aiResponse.learning.studyTopics && !aiResponse.learning.preparedQuestions)) {
+            return res.status(500).json({ success: false, message: 'AI failed to generate valid additional learning items.' });
         }
 
-        let resumeText = '';
-        let resumeUrl = '';
+        const newTopics = aiResponse.learning.studyTopics || [];
+        const newQuestions = aiResponse.learning.preparedQuestions || [];
 
-        if (type === 'resume-based') {
-            if (!req.file) return res.status(400).json({ message: "A resume file is required for a 'resume-based' interview." });
+        req.preparation.learning.studyTopics.push(...newTopics);
+        req.preparation.learning.preparedQuestions.push(...newQuestions);
 
-            const uploadResult = await uploadToCloudinary(req.file.buffer);
-            resumeUrl = uploadResult.secure_url;
+        await req.preparation.save();
 
-            resumeText = await extractTextFromResume(req.file);
-            if (!resumeText) return res.status(400).json({ message: 'Could not read text from resume file.' });
-        }
-
-        const { question, sourceQuestionId } = await generateFirstQuestion({
-            type,
-            targetRole: targetRole || plan.targetRole,
-            targetCompany: targetCompany || plan.targetCompany,
-            resumeText,
-        });
-
-        const interviewData = {
-            type,
-            targetCompany: targetCompany || plan.targetCompany,
-            targetRole: targetRole || plan.targetRole,
-            resumeFileUrl: resumeUrl,
-            questions: [{ question, sourceQuestion: sourceQuestionId }],
-        };
-
-        plan.aiMockInterviews.push(interviewData);
-        await plan.save();
-
-        const newInterview = plan.aiMockInterviews.slice(-1)[0];
         res.status(201).json({
-            message: "Interview started successfully.",
-            interviewId: newInterview._id,
-            question: newInterview.questions[0].question,
+            success: true,
+            message: 'Successfully added new learning items.',
+            data: req.preparation.learning
         });
 
     } catch (error) {
-        if (error.response) return handleGenerativeAIError(error, res);
-        console.error('Start Interview Error:', error);
-        res.status(500).json({ message: error.message || 'Server Error during interview setup.' });
+        console.error("Error generating more learning items:", error);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
-router.post('/:id/interviews/:interviewId/respond', protect, async (req, res) => {
+router.delete('/:id/learning/study-topics', getPreparation, async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'An array of item IDs is required.' });
+    }
+    req.preparation.learning.studyTopics.pull(...ids);
+    await req.preparation.save();
+    res.status(200).json({ success: true, message: 'Selected study topics deleted.' });
+});
+
+router.delete('/:id/learning/prepared-questions', getPreparation, async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'An array of item IDs is required.' });
+    }
+    req.preparation.learning.preparedQuestions.pull(...ids);
+    await req.preparation.save();
+    res.status(200).json({ success: true, message: 'Selected questions deleted.' });
+});
+
+
+// --- PRACTICE SECTION: AI GENERATION & CRUD ROUTES ---
+router.post('/:id/practice/generate', getPreparation, async (req, res) => {
     try {
-        const { answer } = req.body;
-        if (!answer) return res.status(400).json({ message: 'Answer text is required.' });
+        const prompt = ` 
+        Based on the interview target (Role: ${req.preparation.target.role}), generate a JSON object with "practiceProblems" and "storyBank" keys. Adhere STRICTLY to the following rules:
+        - "practiceProblems": Array of 3 relevant coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
+          - 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'.
+          - 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
+        - "storyBank": Array of 3 behavioral story prompts. Each MUST include 'prompt', 'situation', 'task', 'action', 'result', and 'keywords' .
+        Output ONLY the raw JSON object. NOte:Dont repeat the same topic or question in both sections:`;
+        
+        const aiPractice = await callGemini(prompt);
 
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan || !checkOwnership(plan, req.user.id)) {
-            return res.status(404).json({ message: 'Plan not found or not authorized.' });
+        if (!aiPractice.practiceProblems && !aiPractice.storyBank) {
+            throw new Error("AI failed to generate valid practice items.");
         }
 
-       const interview = plan.aiMockInterviews.id(req.params.interviewId);
-        if (!interview) return res.status(404).json({ message: 'Interview session not found.' });
-        if (interview.overallScore != null) return res.status(400).json({ message: 'This interview has already ended.' });
+        if (aiPractice.practiceProblems) req.preparation.practice.practiceProblems.push(...aiPractice.practiceProblems);
+        if (aiPractice.storyBank) req.preparation.practice.storyBank.push(...aiPractice.storyBank);
+        await req.preparation.save();
+        res.status(201).json({ success: true, data: req.preparation.practice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to generate practice items.' });
+    }
+});
 
-        // --- NEW: Constants for interview length logic ---
-        const INITIAL_QUESTION_LIMIT = 10;
-        const EXTENDED_QUESTION_LIMIT = 15;
+router.post('/:id/practice/problems', getPreparation, async (req, res) => {
+    try {
+        req.preparation.practice.practiceProblems.push(req.body);
+        await req.preparation.save();
+        res.status(201).json({ success: true, data: req.preparation.practice.practiceProblems.slice(-1)[0] });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+});
 
-        // Update the current question with the user's answer
-        const currentQuestionIndex = interview.questions.length - 1;
-        interview.questions[currentQuestionIndex].studentRespondedAnswer = answer;
 
-        const transcript = interview.questions.map(q => `Question: ${q.question}\nAnswer: ${q.studentRespondedAnswer || ''}`).join('\n\n---\n\n');
+// --- ASSESSMENT SECTION: RESUME & MOCK INTERVIEW ROUTES ---
+router.post('/:id/assessment/upload-resume', getPreparation, upload.single('resume'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+    try {
+        const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
+        const extractedText = await extractTextFromBuffer(req.file.buffer, req.file.mimetype);
+        res.status(200).json({ success: true, url: cloudinaryResult.secure_url, extractedText });
+    } catch (error) {
+        res.status(500).json({ success: false, message: `Failed to process resume: ${error.message}` });
+    }
+});
 
-        // --- NEW: More efficient prompt to get feedback, rating, and next question at once ---
-        const prompt = `
-            You are an expert AI interviewer for a "${interview.targetRole}" position.
-            The candidate just answered: "${answer}" to the question: "${interview.questions[currentQuestionIndex].question}".
-            The full interview transcript is below:
-            ---
-            ${transcript}
-            ---
-            Based on the candidate's most recent answer, perform three tasks:
-            1. Provide specific, constructive, and concise feedback on the answer itself.
-            2. Provide a single-word rating for the answer from these options: "excellent", "good", "fair", "needs-improvement".
-            3. Generate the next logical, relevant interview question to continue the conversation.
-
-            Your output must be a valid JSON object with three keys: "feedback" (string), "rating" (string), and "nextQuestion" (string).
-        `;
-
-        const aiResponse = await generateAiResponse(prompt);
-        const { feedback, rating, nextQuestion } = aiResponse;
-
-        // Update the current question with the AI's analysis
-        interview.questions[currentQuestionIndex].feedback = feedback;
-        interview.questions[currentQuestionIndex].rating = rating;
-
-        // --- NEW: Logic to check for interview extension ---
-        // If this is the 10th question and the answer is good, extend the interview
-        if (interview.questions.length === INITIAL_QUESTION_LIMIT && !interview.isExtended) {
-            if (rating === 'excellent' || rating === 'good') {
-                interview.isExtended = true;
-            }
-        }
-
-        // --- NEW: Check if the interview should end ---
-        const currentLimit = interview.isExtended ? EXTENDED_QUESTION_LIMIT : INITIAL_QUESTION_LIMIT;
-        let isInterviewOver = interview.questions.length >= currentLimit;
-
-        // --- NEW: Personalize feedback ---
-        const studentName = plan.user?.name || interview.resumeFileName;
-        let personalizedFeedback;
-        if (rating === 'excellent' || rating === 'good') {
-            const prefix = studentName ? `Good answer, ${studentName}. ` : "Good answer. ";
-            personalizedFeedback = prefix + feedback;
+router.post('/:id/assessment/start', getPreparation, async (req, res) => {
+    const { type, difficulty, resumeUrl, resumeContent } = req.body;
+    try {
+        let initialPrompt;
+        if (type === 'resume-based' && resumeContent) {
+            initialPrompt = `Act as an AI interviewer for a "${req.preparation.target.role}" role. Start a '${type}' mock interview. Ask one insightful opening question based on this resume excerpt: "${resumeContent.substring(0, 2000)}...". Return a JSON object with a single key "question".`;
         } else {
-            personalizedFeedback = `Here's some feedback on that: ${feedback}`;
-        }
-
-        if (isInterviewOver) {
-            await plan.save();
-            return res.json({
-                feedback: personalizedFeedback,
-                nextQuestion: null, // Signal to the frontend that the interview is complete
-                message: "You've reached the end of the interview. You can now request the final report."
-            });
-        }
-
-        // If not over, add the next question and respond
-        interview.questions.push({ question: nextQuestion });
-        await plan.save();
-
-        res.json({
-            feedback: personalizedFeedback,
-            nextQuestion: nextQuestion,
-        });
-
-    } catch (error) {
-        handleGenerativeAIError(error, res);
-    }
-
-});
-
-router.post('/:id/interviews/:interviewId/handle-issue', protect, async (req, res) => {
-    try {
-        const { issueType, currentQuestion } = req.body;
-        if (!issueType || !currentQuestion) return res.status(400).json({ message: "Issue type and current question are required." });
-
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan || !checkOwnership(plan, req.user.id)) {
-            return res.status(404).json({ message: 'Plan not found or not authorized.' });
-        }
-
-        const interview = plan.aiMockInterviews.id(req.params.interviewId);
-        if (!interview) return res.status(404).json({ message: 'Interview session not found.' });
-
-        const prompt = `
-            You are an empathetic AI interviewer for a "${interview.targetRole}" position.
-            The candidate is struggling with: "${currentQuestion}". Their issue is: "${issueType}".
-
-            Your task is to respond helpfully.
-            - If 'need_hint', provide a guiding hint without the full answer.
-            - If 'irrelevant_question', acknowledge gracefully and offer an alternative question.
-            - If 'too_hard', rephrase the question in a simpler way.
-
-            Your output must be a valid JSON object with two keys:
-            1. "empatheticMessage": A supportive message (e.g., "No problem, let's break it down.").
-            2. "response": The actual hint, rephrased question, or alternative question.
-        `;
-        const parsedData = await generateAiResponse(prompt);
-        res.json(parsedData);
-    } catch (error) {
-        handleGenerativeAIError(error, res);
-    }
-});
-
-router.post('/:id/interviews/:interviewId/end-interview', protect, async (req, res) => {
-    try {
-        // 1. Find the parent preparation plan and validate ownership
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan || !checkOwnership(plan, req.user.id)) {
-            return res.status(404).json({ message: 'Plan not found or you are not authorized.' });
-        }
-
-        // 2. Find the specific interview session within the plan
-        const interview = plan.aiMockInterviews.id(req.params.interviewId);
-        if (!interview) {
-            return res.status(404).json({ message: 'Interview session not found.' });
+            initialPrompt = `Act as an AI interviewer for a "${req.preparation.target.role}" role. Start a '${type}' mock interview at '${difficulty}' difficulty. Ask an appropriate opening question. Return a JSON object with a single key "question".`;
         }
         
-        // 3. Generate feedback for each question concurrently
-        const feedbackPromises = interview.questions.map(async (q) => {
-            const prompt = `
-                You are an expert AI career coach for a "${interview.targetRole}" role.
-                Analyze the following question and the user's answer. Provide concise, constructive feedback and a rating.
-
-                Question: "${q.question}"
-                User's Answer: "${q.studentRespondedAnswer || '(No answer provided)'}"
-
-                Your output MUST be a valid JSON object with two keys:
-                1. "feedback": A concise HTML string (e.g., using <p> and <strong> tags for emphasis) providing specific feedback on the answer's strengths and weaknesses.
-                2. "rating": A single string value from the following options: "excellent", "good", "fair", "needs-improvement".
-
-                Ensure the JSON is well-formed.
-            `;
-            
-            try {
-                const parsedData = await generateAiResponse(prompt);
-                // Update the question object directly with the feedback and rating
-                q.feedback = parsedData.feedback;
-                q.rating = parsedData.rating;
-            } catch (error) {
-                console.error(`Failed to generate feedback for question: ${q.question}`, error);
-                // Assign default error values if a single AI call fails
-                q.feedback = '<p>Could not generate feedback for this question due to an error.</p>';
-                q.rating = 'needs-improvement';
-            }
-        });
-
-        // Wait for all individual feedback requests to complete
-        await Promise.all(feedbackPromises);
-
-
-        // 4. Now that individual feedback is generated, create a comprehensive transcript for the final review.
-        const transcriptWithFeedback = interview.questions.map(q => 
-            `Question: ${q.question}\nAnswer: ${q.studentRespondedAnswer || '(No answer provided)'}\nFeedback: ${q.feedback}\nRating: ${q.rating}`
-        ).join('\n\n---\n\n');
-
-        // 5. Generate overall summary feedback based on the full transcript
-        const overallPrompt = `
-            You are an expert AI career coach providing a final performance review for a "${interview.targetRole}" position.
-            Analyze the following complete interview transcript, which includes individual feedback for each answer, and provide a comprehensive final analysis.
-
-            Full Transcript:
-            ${transcriptWithFeedback}
-
-            Your output must be a valid JSON object with two keys. Use HTML formatting for lists and emphasis in the 'overallFeedback' section to ensure readability.
-            1. "overallFeedback": A detailed string containing three sections: 
-               - "<h3>Summary</h3><p>...</p>"
-               - "<h3>Strengths</h3><ul><li>...</li></ul>"
-               - "<h3>Areas for Improvement</h3><ul><li>...</li></ul>"
-            2. "overallScore": A single integer between 0 and 100 representing their final performance.
-
-            Ensure the JSON is well-formed, with no trailing commas or syntax errors.
-        `;
-
-        const overallParsedData = await generateAiResponse(overallPrompt);
-
-        // 6. Update the interview object with the final summary
-        interview.overallFeedback = overallParsedData.overallFeedback;
-        interview.overallScore = overallParsedData.overallScore;
+        const response = await callGemini(initialPrompt);
         
-        // 7. Save all changes to the database
-        await plan.save();
-
-        // 8. Return the fully updated interview session
-        res.json(interview);
-
+        const newInterview = {
+            _id: new mongoose.Types.ObjectId(),
+            type,
+            difficulty,
+            resumeUrl,
+            transcript: [{ speaker: 'ai', content: response.question, timestamp: new Date() }],
+        };
+        
+        req.preparation.assessment.aiMockInterviews.push(newInterview);
+        await req.preparation.save();
+        
+        res.status(201).json({ success: true, mockInterviewId: newInterview._id, firstQuestion: response.question });
     } catch (error) {
-        // Handle potential errors from the overall AI call or database save
-        handleGenerativeAIError(error, res);
+        console.error("Error starting interview:", error);
+        res.status(500).json({ success: false, message: 'Failed to start mock interview.' });
     }
 });
 
-router.post('/:id/generate-questions', protect, async (req, res) => {
-    try {
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan || !checkOwnership(plan, req.user.id)) {
-            return res.status(404).json({ message: 'Plan not found or not authorized.' });
-        }
-        const prompt = `
-            You are a hiring manager for a "${plan.targetRole}" role.
-            Generate 5 relevant interview questions for a candidate with "${plan.experienceLevel}" of experience. Include a mix of behavioral and technical questions.
-            For EACH question, provide a detailed, expert-level sample answer formatted as a single HTML string, including headings (<h3>), paragraphs (<p>), code blocks (<pre><code>), and lists (<ul><li>). CRITICAL: All HTML characters inside the <code> block MUST be properly escaped (e.g., &lt;).
+// NEW ROUTE FOR CONTINUOUS CONVERSATION
+router.post('/:id/assessment/:mockId/next', getPreparation, async (req, res) => {
+    const { transcript } = req.body;
+    const { mockId } = req.params;
 
-            Your final output must be a valid JSON object with a single key "questions".
-            This key's value must be an array of 5 objects, each with THREE keys: "question" (string), "difficulty" (string enum of 'easy', 'medium', or 'hard'), and "answer" (the complete HTML string).
-        `;
-        const parsedData = await generateAiResponse(prompt);
-        if (parsedData.questions && Array.isArray(parsedData.questions)) {
-            const newQuestions = parsedData.questions.map(q => ({
-                question: q.question,
-                difficulty: q.difficulty,
-                aiGeneratedAnswers: [q.answer]
-            }));
-            plan.questions.push(...newQuestions);
-            await plan.save();
-            res.status(201).json(plan);
-        } else {
-            res.status(400).json({ message: 'AI failed to generate valid questions.' });
+    if (!transcript || !Array.isArray(transcript) || transcript.length === 0) {
+        return res.status(400).json({ success: false, message: 'Transcript is required.' });
+    }
+    
+    try {
+        const mockInterview = req.preparation.assessment.aiMockInterviews.id(mockId);
+        if (!mockInterview) {
+            return res.status(404).json({ success: false, message: 'Mock interview session not found.' });
         }
+
+        // Update the transcript in the database with the latest from the client
+        mockInterview.transcript = transcript;
+
+        const transcriptText = transcript.map(t => `${t.speaker}: ${t.content}`).join('\n');
+        
+        const nextQuestionPrompt = `
+              You are an AI interviewer conducting a mock interview for a "${req.preparation.target.role}" role.
+              The current conversation is below:
+              ---
+              ${transcriptText}
+              ---
+              Based on the user's last answer, ask the next logical and relevant follow-up question. 
+              Keep the conversation flowing naturally. Do not end the interview.
+              Return a JSON object with a single key "nextQuestion".
+        `;
+        
+        const response = await callGemini(nextQuestionPrompt);
+        const newQuestion = response.nextQuestion;
+
+        // Add the new AI question to the transcript
+        mockInterview.transcript.push({ speaker: 'ai', content: newQuestion, timestamp: new Date() });
+
+        await req.preparation.save();
+
+        res.status(200).json({ success: true, nextQuestion: newQuestion });
+
     } catch (error) {
-        handleGenerativeAIError(error, res);
+        console.error("Error getting next question:", error);
+        res.status(500).json({ success: false, message: 'Failed to get next question from AI.' });
     }
 });
 
-/**
- * @route   POST /api/interview-prep/:id/generate-resources
- * @desc    Generate a list of study resources using AI
- * @access  Private
- */
-router.post('/:id/generate-resources', protect, async (req, res) => {
+
+router.post('/:id/assessment/:mockId/warning', getPreparation, async (req, res) => {
+    const { transcript } = req.body;
+    if (!transcript || transcript.length === 0) {
+        return res.status(400).json({ success: false, message: 'Transcript is required.' });
+    }
     try {
-        const plan = await InterviewPreparation.findById(req.params.id);
-        if (!plan || !checkOwnership(plan, req.user.id)) {
-            return res.status(404).json({ message: 'Plan not found or not authorized.' });
+        const transcriptText = transcript.map(t => `${t.speaker}: ${t.content}`).join('\n');
+        const warningPrompt = `Analyze this interview transcript: "${transcriptText}". The 'user' is off-topic. Generate a gentle, one-sentence warning to redirect them. Return JSON: { "warning": "..." }`;
+        const response = await callGemini(warningPrompt);
+        res.status(200).json({ success: true, warning: response.warning });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to generate warning.' });
+    }
+});
+
+router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
+    const { transcript } = req.body;
+    const { mockId } = req.params;
+
+    if (!transcript || !Array.isArray(transcript)) {
+        return res.status(400).json({ success: false, message: 'A valid transcript array is required.' });
+    }
+    
+    try {
+        // Find the specific mock interview to get its start date for duration calculation
+        const mockInterview = req.preparation.assessment.aiMockInterviews.id(mockId);
+        if (!mockInterview) {
+            return res.status(404).json({ success: false, message: 'Mock interview not found.' });
         }
+        
+        const transcriptText = transcript.map(t => `${t.speaker}: ${t.content}`).join('\n');
 
-        const prompt = `
-            You are an expert career coach for a "${plan.targetRole}".
-            Generate 5 high-quality, up-to-date study resources for someone with "${plan.experienceLevel}" of experience.
+        const feedbackPrompt = `
+            You are a world-class interview coach. Analyze the following interview transcript for a "${req.preparation.target.role}" role and provide detailed feedback.
 
-            Your output must be a valid JSON object with a single key "resources".
-            This key should contain an array of 5 objects, where each object has SIX keys:
-            1.  "name" (string): The clear and descriptive title of the resource.
-            2.  "url" (string): A valid, full, and direct URL.
-            3.  "type" (enum of 'documentation', 'article', 'video', 'course', 'book', 'tool'): The type of resource.
-            4.  "justification" (string): A single sentence explaining WHY this specific resource is valuable for the candidate.
+            Transcript:
+            ---
+            ${transcriptText}
+            ---
+
+            Your Task: Generate a single JSON object. The object itself should have the following keys, populated with your analysis. Adhere STRICTLY to the formats described:
+
+            - "overallScore": A number from 0-100.
+            - "performanceSummary": A concise paragraph summarizing the user's performance.
+            - "contentAnalysis": An object with "clarity", "conciseness", "technicalAccuracy", each with "score" (a number from 0-10) and "feedback" (a string).
+            - "communicationAnalysis": An object with:
+                - "pacing": MUST be one of: "too-slow", "good", or "too-fast".
+                - "fillerWords": MUST be an object with "count" (number) and "words" (array of strings).
+                - "confidenceLevel": MUST be one of: "low", "medium", or "high".
+            - "suggestedAnswers": An array of 1-2 objects, each with "question" and "suggestedAnswer".
             
-            // --- CORRECTION: The enum values now match the Mongoose Schema exactly. ---
-            5.  "recommendation" (enum of 'best', 'good', 'average'): Your rating of the resource quality. 'best' for essential resources and 'good' for highly recommended ones.
-            
-            6.  "recommendedOrder" (number): A sequential number (1 to 5) indicating the suggested order to study them.
-        `;
+            Output ONLY the raw JSON object.`;
 
-        const parsedData = await generateAiResponse(prompt);
+        const aiFeedback = await callGemini(feedbackPrompt);
+        
+        const interviewDurationSeconds = Math.round((new Date() - new Date(mockInterview.date)) / 1000);
 
-        if (parsedData.resources && Array.isArray(parsedData.resources)) {
-            const existingUrls = new Set(plan.studyResources.map(r => r.url));
-            const newResources = parsedData.resources.filter(r => r.url && !existingUrls.has(r.url));
-
-            if (newResources.length === 0) {
-                return res.status(200).json({ message: 'No new unique resources were generated. Your list is up to date!', plan });
+        // This atomic update operation is the correct way to prevent race condition errors (VersionError).
+        const updateResult = await InterviewPreparation.updateOne(
+            { _id: req.preparation._id },
+            { 
+                $set: {
+                    'assessment.aiMockInterviews.$[interview].transcript': transcript,
+                    'assessment.aiMockInterviews.$[interview].aiFeedback': aiFeedback,
+                    'assessment.aiMockInterviews.$[interview].interviewDurationSeconds': interviewDurationSeconds,
+                }
+            },
+            { 
+                // This 'arrayFilters' option targets the correct subdocument in the array.
+                arrayFilters: [{ 'interview._id': new mongoose.Types.ObjectId(mockId) }] 
             }
+        );
 
-            plan.studyResources.push(...newResources);
-            await plan.save(); // This will now succeed without a validation error
-            res.status(201).json(plan);
-        } else {
-            res.status(400).json({ message: 'AI failed to generate valid resources.' });
+        if (updateResult.modifiedCount === 0) {
+            console.warn(`Interview end: No document was modified for prepId ${req.preparation._id} and mockId ${mockId}`);
         }
+
+        // Fetch the newly updated interview data to send back to the client.
+        const updatedPreparation = await InterviewPreparation.findById(req.preparation._id).lean();
+        const updatedInterview = updatedPreparation.assessment.aiMockInterviews.find(
+            interview => interview._id.toString() === mockId
+        );
+        
+        if (!updatedInterview) {
+             return res.status(404).json({ success: false, message: 'Could not retrieve the updated interview.' });
+        }
+        
+        res.status(200).json({ success: true, data: updatedInterview });
+
     } catch (error) {
-        // Mongoose validation errors will be caught here if any other mismatch occurs
-        if (error.name === 'ValidationError') {
-            return res.status(400).json({ message: `Data validation failed: ${error.message}` });
-        }
-        handleGenerativeAIError(error, res);
+        console.error("Error ending interview and generating feedback:", error);
+        res.status(500).json({ success: false, message: 'Failed to end interview and generate feedback.' });
     }
 });
 

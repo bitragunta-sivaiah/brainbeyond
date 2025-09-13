@@ -149,7 +149,7 @@ app.use('/api/v1/student/courses', studentRouter);
 app.use('/api/v1/certificates', courseCertificateRouter);
 app.use('/api/v1/liveclasses', liveclassesRouter);
 app.use('/api/v1/contact', contactRouter);
-app.use('/api/v1/interview-prep', interviewsRouter);
+app.use('/api/v1/interview-preparations', interviewsRouter);
 app.use('/api/v1/resumes', resumeRoutes);
 app.use('/api/v1/ats', atsRoutes);
 app.use('/api/v1/roadmaps', roadmapsRoutes);

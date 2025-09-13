@@ -1,437 +1,427 @@
-import API from "@/api/api";
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import toast from "react-hot-toast";
+import API from "@/api/api"; // Assuming your API wrapper is here
 
-// --- Initial State ---
+// --- INITIAL STATE ---
 const initialState = {
     preparations: [],
     currentPreparation: null,
-    currentInterview: null,
-    adminQuestions: [],
-    isLoading: false,
-    isSuccess: false,
-    isError: false,
-    message: "",
+    status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+    error: null,
 };
 
-// --- Helper for consistent error message extraction ---
-const getErrorMessage = (error, defaultMessage) => {
-    return error.response?.data?.message || error.message || defaultMessage;
-};
+// --- ASYNC THUNKS ---
 
-
-// =================================================================
-// --- ASYNC THUNKS (USER PLANS & CONTENT) ---
-// =================================================================
-
-export const fetchPreparations = createAsyncThunk("interviewPrep/fetchAll", async (_, { rejectWithValue }) => {
-    try {
-        const { data } = await API.get("/interview-prep");
-        return data;
-    } catch (error) {
-        return rejectWithValue(getErrorMessage(error, "Failed to fetch preparation plans."));
-    }
-});
-
-export const createPreparation = createAsyncThunk("interviewPrep/create", async (prepData, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post("/interview-prep", prepData);
-        toast.success("Preparation plan created!");
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to create plan.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const fetchPreparationById = createAsyncThunk("interviewPrep/fetchById", async (id, { rejectWithValue }) => {
-    try {
-        const { data } = await API.get(`/interview-prep/${id}`);
-        return data;
-    } catch (error) {
-        return rejectWithValue(getErrorMessage(error, "Could not load the preparation plan."));
-    }
-});
-
-export const updatePreparation = createAsyncThunk("interviewPrep/update", async ({ id, prepData }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.put(`/interview-prep/${id}`, prepData);
-        toast.success("Plan updated!");
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Update failed.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const deletePreparation = createAsyncThunk("interviewPrep/delete", async (id, { rejectWithValue }) => {
-    try {
-        await API.delete(`/interview-prep/${id}`);
-        toast.success("Plan deleted!");
-        return id;
-    } catch (error) {
-        const message = getErrorMessage(error, "Deletion failed.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const deleteBulkPreparations = createAsyncThunk("interviewPrep/deleteBulk", async (ids, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post("/interview-prep/bulk-delete", { ids });
-        toast.success(data.message);
-        return ids;
-    } catch (error) {
-        const message = getErrorMessage(error, "Bulk delete failed.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const generateQuestions = createAsyncThunk("interviewPrep/generateQuestions", async (id, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${id}/generate-questions`);
-        toast.success("AI questions generated!");
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to generate questions.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const toggleQuestionPin = createAsyncThunk("interviewPrep/toggleQuestionPin", async ({ planId, questionId }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.patch(`/interview-prep/${planId}/questions/${questionId}/toggle-pin`);
-        toast.success("Question pin updated!");
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to update question pin.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const deleteBulkQuestions = createAsyncThunk("interviewPrep/deleteBulkQuestions", async ({ planId, questionIds }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${planId}/questions/bulk-delete`, { questionIds });
-        toast.success(data.message);
-        return data.plan;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to remove questions.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const generateResources = createAsyncThunk("interviewPrep/generateResources", async (id, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${id}/generate-resources`);
-        toast.success(data.message || "AI resources generated!");
-        return data.plan || data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to generate resources.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const updateResource = createAsyncThunk(
-    "interviewPrep/updateResource",
-    async ({ planId, resourceId, resourceData }, { rejectWithValue }) => {
+// 1. Fetch ALL interview preparations
+export const getPreparations = createAsyncThunk(
+    'interview/getPreparations',
+    async (_, { rejectWithValue }) => {
         try {
-            const { data } = await API.put(`/interview-prep/${planId}/resources/${resourceId}`, resourceData);
-            toast.success("Resource updated!");
-            return data;
+            const response = await API.get('/interview-preparations');
+            return response.data.data;
         } catch (error) {
-            const message = getErrorMessage(error, "Failed to update resource.");
-            toast.error(message);
-            return rejectWithValue(message);
+            return rejectWithValue(error.response.data);
         }
     }
 );
 
-export const deleteBulkResources = createAsyncThunk("interviewPrep/deleteBulkResources", async ({ planId, resourceIds }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${planId}/resources/bulk-delete`, { resourceIds });
-        toast.success(data.message);
-        return data.plan;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to remove resources.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-
-// =================================================================
-// --- MOCK INTERVIEW THUNKS ---
-// =================================================================
-
-export const startInterview = createAsyncThunk(
-    "interviewPrep/startInterview",
-    async ({ planId, config }, { rejectWithValue }) => {
+// 2. Fetch a SINGLE interview preparation by ID
+export const getPreparationById = createAsyncThunk(
+    'interview/getPreparationById',
+    async (id, { rejectWithValue }) => {
         try {
-            const requestConfig = {
-                headers: {
-                    "Content-Type": "multipart/form-data",
-                },
-            };
+            const response = await API.get(`/interview-preparations/${id}`);
+            return response.data.data;
+        } catch (error) {
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
 
-            const { data } = await API.post(
-                `/interview-prep/${planId}/start-interview`,
-                config, 
-                requestConfig
-            );
-            
+// 3. Create a new interview preparation with AI
+export const createPreparation = createAsyncThunk(
+    'interview/createPreparation',
+    async (initialData, { rejectWithValue }) => {
+        try {
+            const response = await API.post('/interview-preparations', initialData);
+            toast.success("AI has successfully created your preparation plan!");
+            return response.data.data;
+        } catch (error) {
+            toast.error("Failed to create AI preparation plan.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 4. Update an interview preparation
+export const updatePreparation = createAsyncThunk(
+    'interview/updatePreparation',
+    async ({ id, updateData }, { rejectWithValue }) => {
+        try {
+            const response = await API.put(`/interview-preparations/${id}`, updateData);
+            toast.success("Preparation plan updated.");
+            return response.data.data;
+        } catch (error) {
+            toast.error("Failed to update preparation plan.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 5. Delete an interview preparation
+export const deletePreparation = createAsyncThunk(
+    'interview/deletePreparation',
+    async (id, { rejectWithValue }) => {
+        try {
+            await API.delete(`/interview-preparations/${id}`);
+            toast.success("Preparation plan deleted successfully.");
+            return id;
+        } catch (error) {
+            toast.error("Failed to delete preparation plan.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 6. Batch delete study topics
+export const deleteStudyTopics = createAsyncThunk(
+    'interview/deleteStudyTopics',
+    async ({ id, ids }, { rejectWithValue }) => {
+        try {
+            await API.delete(`/interview-preparations/${id}/learning/study-topics`, { data: { ids } });
+            toast.success("Selected study topics deleted.");
+            return { ids };
+        } catch (error) {
+            toast.error("Failed to delete study topics.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 7. Batch delete prepared questions
+export const deletePreparedQuestions = createAsyncThunk(
+    'interview/deletePreparedQuestions',
+    async ({ id, ids }, { rejectWithValue }) => {
+        try {
+            await API.delete(`/interview-preparations/${id}/learning/prepared-questions`, { data: { ids } });
+            toast.success("Selected questions deleted.");
+            return { ids };
+        } catch (error) {
+            toast.error("Failed to delete prepared questions.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 8. Generate more learning items with AI
+export const generateLearningItems = createAsyncThunk(
+    'interview/generateLearningItems',
+    async (id, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/learning/generate`);
+            toast.success("AI has generated new learning items!");
+            return { preparationId: id, learningData: response.data.data };
+        } catch (error) {
+            toast.error("Failed to generate more learning items.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+
+// 9. Generate practice items with AI
+export const generatePracticeItems = createAsyncThunk(
+    'interview/generatePracticeItems',
+    async (id, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/practice/generate`);
+            toast.success("AI has generated new practice items!");
+            return { preparationId: id, practiceData: response.data.data };
+        } catch (error) {
+            toast.error("Failed to generate practice items.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 10. Add a single practice problem
+export const addPracticeProblem = createAsyncThunk(
+    'interview/addPracticeProblem',
+    async ({ id, problemData }, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/practice/problems`, problemData);
+            toast.success("Practice problem added.");
+            return { preparationId: id, problem: response.data.data };
+        } catch (error) {
+            toast.error("Failed to add practice problem.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 11. Upload a resume and get extracted text
+export const uploadResume = createAsyncThunk(
+    'interview/uploadResume',
+    async ({ id, resumeFile }, { rejectWithValue }) => {
+        const formData = new FormData();
+        formData.append('resume', resumeFile);
+        try {
+            const response = await API.post(`/interview-preparations/${id}/assessment/upload-resume`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            toast.success("Resume uploaded and analyzed!");
+            return response.data;
+        } catch (error) {
+            toast.error("Failed to upload or analyze resume.");
+            return rejectWithValue(error.response.data);
+        }
+    }
+);
+
+// 12. Start a mock interview
+export const startMockInterview = createAsyncThunk(
+    'interview/startMockInterview',
+    async ({ id, interviewData }, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/assessment/start`, interviewData);
             toast.success("Mock interview started!");
-            return { ...data, planId };
+            return { preparationId: id, ...response.data };
         } catch (error) {
-            const message = getErrorMessage(error, "Failed to start interview.");
-            toast.error(message);
-            return rejectWithValue(message);
+            toast.error("Failed to start the mock interview.");
+            return rejectWithValue(error.response.data);
         }
     }
 );
 
-export const respondToInterview = createAsyncThunk("interviewPrep/respondToInterview", async ({ planId, interviewId, answer }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${planId}/interviews/${interviewId}/respond`, { answer });
-        return { ...data, answer, interviewId };
-    } catch (error) {
-        const message = getErrorMessage(error, "Error submitting answer.");
-        toast.error(message);
-        return rejectWithValue(message);
+// 13. Get a warning during a mock interview
+export const getMockInterviewWarning = createAsyncThunk(
+    'interview/getMockInterviewWarning',
+    async ({ id, mockId, transcript }, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/assessment/${mockId}/warning`, { transcript });
+            toast.info(`AI Suggestion: ${response.data.warning}`);
+            return response.data.warning;
+        } catch (error) {
+            return rejectWithValue(error.response.data);
+        }
     }
-});
+);
 
-export const handleInterviewIssue = createAsyncThunk("interviewPrep/handleInterviewIssue", async ({ planId, interviewId, issueType, currentQuestion }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${planId}/interviews/${interviewId}/handle-issue`, { issueType, currentQuestion });
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Error handling interview issue.");
-        console.error(message);
-        return rejectWithValue(message);
+// 14. End a mock interview and get feedback
+export const endMockInterview = createAsyncThunk(
+    'interview/endMockInterview',
+    async ({ id, mockId, transcript }, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/assessment/${mockId}/end`, { transcript });
+            toast.success("AI feedback has been generated!");
+            return { preparationId: id, mockInterviewData: response.data.data };
+        } catch (error) {
+            toast.error("Failed to generate AI feedback.");
+            return rejectWithValue(error.response.data);
+        }
     }
-});
+);
 
-export const endInterview = createAsyncThunk("interviewPrep/endInterview", async ({ planId, interviewId }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post(`/interview-prep/${planId}/interviews/${interviewId}/end-interview`);
-        toast.success("Interview finished. Feedback generated!");
-        return { interviewData: data, planId };
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to generate feedback.");
-        toast.error(message);
-        return rejectWithValue(message);
+// 15. Get the next question during a mock interview
+export const getNextQuestion = createAsyncThunk(
+    'interview/getNextQuestion',
+    async ({ id, mockId, transcript }, { rejectWithValue }) => {
+        try {
+            const response = await API.post(`/interview-preparations/${id}/assessment/${mockId}/next`, { transcript });
+            return response.data.nextQuestion;
+        } catch (error) {
+            toast.error("Failed to get next question from AI.");
+            return rejectWithValue(error.response.data);
+        }
     }
-});
+);
 
 
-// =================================================================
-// --- ADMIN THUNKS ---
-// =================================================================
-
-export const fetchAdminQuestions = createAsyncThunk("interviewPrep/admin/fetchAll", async (filters, { rejectWithValue }) => {
-    try {
-        const { data } = await API.get("/interview-prep/admin/questions", { params: filters });
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to fetch admin questions.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const createAdminQuestion = createAsyncThunk("interviewPrep/admin/create", async (questionData, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post("/interview-prep/admin/questions", questionData);
-        toast.success("Admin question created!");
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to create admin question.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const updateAdminQuestion = createAsyncThunk("interviewPrep/admin/update", async ({ questionId, questionData }, { rejectWithValue }) => {
-    try {
-        const { data } = await API.put(`/interview-prep/admin/questions/${questionId}`, questionData);
-        toast.success("Admin question updated!");
-        return data;
-    } catch (error) {
-        const message = getErrorMessage(error, "Failed to update admin question.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-export const deleteBulkAdminQuestions = createAsyncThunk("interviewPrep/admin/deleteBulk", async (ids, { rejectWithValue }) => {
-    try {
-        const { data } = await API.post("/interview-prep/admin/questions/bulk-delete", { ids });
-        toast.success(data.message);
-        return ids;
-    } catch (error) {
-        const message = getErrorMessage(error, "Bulk deletion failed.");
-        toast.error(message);
-        return rejectWithValue(message);
-    }
-});
-
-
-// =================================================================
 // --- SLICE DEFINITION ---
-// =================================================================
-
-const interviewPrepSlice = createSlice({
-    name: "interviewPrep",
+const interviewSlice = createSlice({
+    name: 'interview',
     initialState,
     reducers: {
-        reset: () => initialState,
-        clearCurrentInterview: (state) => {
-            state.currentInterview = null;
+        setCurrentPreparation: (state, action) => {
+            state.currentPreparation = state.preparations.find(p => p._id === action.payload) || null;
         },
+        clearCurrentPreparation: (state) => {
+            state.currentPreparation = null;
+        }
     },
     extraReducers: (builder) => {
-        const updatePreparationInState = (state, action) => {
-            const updatedPlan = action.payload;
-            const index = state.preparations.findIndex((p) => p._id === updatedPlan._id);
-            if (index !== -1) {
-                state.preparations[index] = updatedPlan;
-            }
-            if (state.currentPreparation?._id === updatedPlan._id) {
-                state.currentPreparation = updatedPlan;
-            }
-        };
-
         builder
-            .addCase(fetchPreparations.fulfilled, (state, action) => {
+            // GET ALL
+            .addCase(getPreparations.pending, (state) => { state.status = 'loading'; })
+            .addCase(getPreparations.fulfilled, (state, action) => {
+                state.status = 'succeeded';
                 state.preparations = action.payload;
             })
-            .addCase(fetchPreparationById.fulfilled, (state, action) => {
+            .addCase(getPreparations.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // GET BY ID
+            .addCase(getPreparationById.pending, (state) => { state.status = 'loading'; })
+            .addCase(getPreparationById.fulfilled, (state, action) => {
+                state.status = 'succeeded';
                 state.currentPreparation = action.payload;
             })
+            .addCase(getPreparationById.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // CREATE
+            .addCase(createPreparation.pending, (state) => { state.status = 'loading'; })
             .addCase(createPreparation.fulfilled, (state, action) => {
+                state.status = 'succeeded';
                 state.preparations.unshift(action.payload);
             })
+            .addCase(createPreparation.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // UPDATE
+            .addCase(updatePreparation.pending, (state) => { state.status = 'loading'; })
+            .addCase(updatePreparation.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                const index = state.preparations.findIndex(p => p._id === action.payload._id);
+                if (index !== -1) {
+                    state.preparations[index] = action.payload;
+                }
+                if (state.currentPreparation?._id === action.payload._id) {
+                    state.currentPreparation = action.payload;
+                }
+            })
+            .addCase(updatePreparation.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // DELETE
+            .addCase(deletePreparation.pending, (state) => { state.status = 'loading'; })
             .addCase(deletePreparation.fulfilled, (state, action) => {
+                state.status = 'succeeded';
                 state.preparations = state.preparations.filter((p) => p._id !== action.payload);
-            })
-            .addCase(deleteBulkPreparations.fulfilled, (state, action) => {
-                const idSet = new Set(action.payload);
-                state.preparations = state.preparations.filter((p) => !idSet.has(p._id));
-            })
-            .addCase(updatePreparation.fulfilled, updatePreparationInState)
-            .addCase(generateQuestions.fulfilled, updatePreparationInState)
-            .addCase(toggleQuestionPin.fulfilled, updatePreparationInState)
-            .addCase(deleteBulkQuestions.fulfilled, updatePreparationInState)
-            .addCase(generateResources.fulfilled, updatePreparationInState)
-            .addCase(updateResource.fulfilled, updatePreparationInState)
-            .addCase(deleteBulkResources.fulfilled, updatePreparationInState)
-
-            // --- Interview Lifecycle ---
-            .addCase(startInterview.fulfilled, (state, action) => {
-                state.currentInterview = {
-                    planId: action.payload.planId,
-                    interviewId: action.payload.interviewId,
-                    question: action.payload.question,
-                    feedback: null,
-                    nextQuestion: null, // Ensure nextQuestion is initialized
-                    empatheticMessage: null,
-                    response: null,
-                };
-            })
-            .addCase(respondToInterview.fulfilled, (state, action) => {
-                if (state.currentInterview) {
-                    // FIX: Populate all necessary fields for the component's useEffect to work.
-                    // The component needs `feedback` and `nextQuestion` to construct the text to speak.
-                    state.currentInterview.feedback = action.payload.feedback;
-                    state.currentInterview.nextQuestion = action.payload.nextQuestion;
-                    // Also update the main 'question' field for UI display.
-                    state.currentInterview.question = action.payload.nextQuestion;
-
-                    // Clear any temporary messages from handleIssue
-                    state.currentInterview.empatheticMessage = null;
-                    state.currentInterview.response = null;
+                if (state.currentPreparation?._id === action.payload) {
+                    state.currentPreparation = null;
                 }
             })
-            .addCase(handleInterviewIssue.fulfilled, (state, action) => {
-                if (state.currentInterview) {
-                    state.currentInterview.empatheticMessage = action.payload.empatheticMessage;
-                    state.currentInterview.response = action.payload.response; 
-                    state.currentInterview.feedback = null;
-                    state.currentInterview.nextQuestion = null;
+            .addCase(deletePreparation.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // DELETE STUDY TOPICS
+            .addCase(deleteStudyTopics.pending, (state) => { state.status = 'loading'; })
+            .addCase(deleteStudyTopics.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                if (state.currentPreparation) {
+                    state.currentPreparation.learning.studyTopics = state.currentPreparation.learning.studyTopics.filter(
+                        (topic) => !action.payload.ids.includes(topic._id)
+                    );
                 }
             })
-            .addCase(endInterview.fulfilled, (state, action) => {
-                const { interviewData, planId } = action.payload;
-                const preparation = state.currentPreparation?._id === planId 
-                    ? state.currentPreparation 
-                    : state.preparations.find(p => p._id === planId);
-
-                if (preparation) {
-                    // FIX: Add the new interview report instead of just trying to update.
-                    // The old logic would fail if the interview didn't already exist in the array.
-                    if (!preparation.aiMockInterviews) {
-                        preparation.aiMockInterviews = []; // Initialize array if it doesn't exist
-                    }
-                    const index = preparation.aiMockInterviews.findIndex(i => i._id === interviewData._id);
+            .addCase(deleteStudyTopics.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // DELETE PREPARED QUESTIONS
+            .addCase(deletePreparedQuestions.pending, (state) => { state.status = 'loading'; })
+            .addCase(deletePreparedQuestions.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                if (state.currentPreparation) {
+                    state.currentPreparation.learning.preparedQuestions = state.currentPreparation.learning.preparedQuestions.filter(
+                        (q) => !action.payload.ids.includes(q._id)
+                    );
+                }
+            })
+            .addCase(deletePreparedQuestions.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // GENERATE LEARNING ITEMS
+            .addCase(generateLearningItems.pending, (state) => { state.status = 'loading'; })
+            .addCase(generateLearningItems.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                if (state.currentPreparation?._id === action.payload.preparationId) {
+                    state.currentPreparation.learning = action.payload.learningData;
+                }
+            })
+            .addCase(generateLearningItems.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // GENERATE PRACTICE
+            .addCase(generatePracticeItems.pending, (state) => { state.status = 'loading'; })
+            .addCase(generatePracticeItems.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                if (state.currentPreparation?._id === action.payload.preparationId) {
+                    state.currentPreparation.practice = action.payload.practiceData;
+                }
+            })
+            .addCase(generatePracticeItems.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // ADD PRACTICE PROBLEM
+            .addCase(addPracticeProblem.pending, (state) => { state.status = 'loading'; })
+            .addCase(addPracticeProblem.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                if (state.currentPreparation?._id === action.payload.preparationId) {
+                    state.currentPreparation.practice.practiceProblems.push(action.payload.problem);
+                }
+            })
+            .addCase(addPracticeProblem.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // UPLOAD RESUME
+            .addCase(uploadResume.pending, (state) => { state.status = 'loading'; })
+            .addCase(uploadResume.fulfilled, (state) => { state.status = 'succeeded'; })
+            .addCase(uploadResume.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // START MOCK INTERVIEW
+            .addCase(startMockInterview.pending, (state) => { state.status = 'loading'; })
+            .addCase(startMockInterview.fulfilled, (state) => { state.status = 'succeeded'; })
+            .addCase(startMockInterview.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+             // GET MOCK INTERVIEW WARNING
+            .addCase(getMockInterviewWarning.pending, (state) => { state.status = 'loading'; })
+            .addCase(getMockInterviewWarning.fulfilled, (state) => { state.status = 'succeeded'; })
+            .addCase(getMockInterviewWarning.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // GET NEXT QUESTION
+            .addCase(getNextQuestion.pending, (state) => { state.status = 'loading'; })
+            .addCase(getNextQuestion.fulfilled, (state) => { state.status = 'succeeded'; })
+            .addCase(getNextQuestion.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            })
+            // END MOCK INTERVIEW
+            .addCase(endMockInterview.pending, (state) => { state.status = 'loading'; })
+            .addCase(endMockInterview.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                const updatedInterview = action.payload.mockInterviewData;
+                if (state.currentPreparation?._id === action.payload.preparationId) {
+                    const index = state.currentPreparation.assessment.aiMockInterviews.findIndex(i => i._id === updatedInterview._id);
                     if (index !== -1) {
-                        // If it exists for some reason, update it
-                        preparation.aiMockInterviews[index] = interviewData;
+                        state.currentPreparation.assessment.aiMockInterviews[index] = updatedInterview;
                     } else {
-                        // Otherwise, add the new completed interview to the list
-                        preparation.aiMockInterviews.unshift(interviewData);
+                        state.currentPreparation.assessment.aiMockInterviews.push(updatedInterview);
                     }
                 }
             })
-
-            // --- Admin Questions ---
-            .addCase(fetchAdminQuestions.fulfilled, (state, action) => {
-                state.adminQuestions = action.payload;
-            })
-            .addCase(createAdminQuestion.fulfilled, (state, action) => {
-                state.adminQuestions.unshift(action.payload);
-            })
-            .addCase(updateAdminQuestion.fulfilled, (state, action) => {
-                const index = state.adminQuestions.findIndex(q => q._id === action.payload._id);
-                if (index !== -1) state.adminQuestions[index] = action.payload;
-            })
-            .addCase(deleteBulkAdminQuestions.fulfilled, (state, action) => {
-                const idSet = new Set(action.payload);
-                state.adminQuestions = state.adminQuestions.filter(q => !idSet.has(q._id));
-            })
-
-            // --- Generic Matchers ---
-            .addMatcher(
-                (action) => action.type.endsWith('/pending'),
-                (state) => {
-                    state.isLoading = true;
-                    state.isError = false;
-                    state.isSuccess = false;
-                }
-            )
-            .addMatcher(
-                (action) => action.type.endsWith('/fulfilled'),
-                (state) => {
-                    state.isLoading = false;
-                    state.isSuccess = true;
-                }
-            )
-            .addMatcher(
-                (action) => action.type.endsWith('/rejected'),
-                (state, action) => {
-                    state.isLoading = false;
-                    state.isError = true;
-                    state.message = action.payload;
-                }
-            );
+            .addCase(endMockInterview.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload?.message || 'An unknown error occurred';
+            });
     },
 });
 
-export const { reset, clearCurrentInterview } = interviewPrepSlice.actions;
-export default interviewPrepSlice.reducer;
+export const { setCurrentPreparation, clearCurrentPreparation } = interviewSlice.actions;
+export default interviewSlice.reducer;
