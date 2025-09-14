@@ -11,7 +11,7 @@ import { protect, authorize } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
 
 // Helper function to send notifications
 const sendNotification = async (userId, title, message, type, itemId, itemType, navigateLink) => {
@@ -49,11 +49,11 @@ const generateCourseContent = async (courseTitle) => {
     const prompt = `
         You are an expert online course creator. Generate comprehensive and modern course metadata in JSON format for a course titled "${courseTitle}".
 
-        The JSON object must strictly adhere to the following structure and guidelines:
+        The JSON object must strictly adhere to the following structure and guidelines and using Html tags for formatting where appropriate (e.g., <b>, <i>, <ul>, <li>, etc.):
         {
-          "courseDescription": "A detailed, engaging, and professional description of the course. Explain what the student will learn and how it will benefit their career.",
+          "courseDescription": "A detailed, engaging, and professional description of the course. Explain what the student will learn and how it will benefit their career. and use HTML tags for formatting. and it contain all about for complete course structure",
           "shortDescription": "A concise, 1-2 sentence summary for previews and social media sharing.",
-          "category": "Web Development",
+          "category": "Web Development", // Choose from predefined categories: 'Web Development', 'Data Science', 'Mobile Development', 'Design', 'Marketing', 'Other' and if other, provide a customCategoryName.
           "level": "intermediate",
           "language": "English",
           "prerequisites": ["List 3-5 key skills or technologies a student needs to know before starting."],
@@ -207,7 +207,7 @@ router.post('/', protect, authorize('admin', 'instructor'), async (req, res) => 
 router.get('/', async (req, res) => {
     try {
         const courses = await Course.find({})
-            .populate('instructors', 'profileInfo.firstName profileInfo.lastName')
+            .populate('instructors', ' username email profileInfo.firstName profileInfo.lastName')
             .populate({
                 path: 'chapters',
                 options: { sort: { position: 1 } },
@@ -227,7 +227,7 @@ router.get('/', async (req, res) => {
 router.get('/:slug', async (req, res) => {
     try {
         const course = await Course.findOne({ slug: req.params.slug })
-            .populate('instructors', 'username email profileInfo.firstName profileInfo.lastName')
+            .populate('instructors', ' username email profileInfo.firstName profileInfo.lastName')
             .populate({
                 path: 'chapters',
                 options: { sort: { position: 1 } },

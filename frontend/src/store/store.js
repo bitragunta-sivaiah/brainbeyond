@@ -26,18 +26,21 @@ import contactReducer from './redux/contactSlice'
 import interviewsReducer from './redux/interviewPreparationSlice'
 import resumeReducer from './redux/resumeSlice'
 import atsReducer from './redux/atsSlice'
-import roadmapsReducer from  './redux/learningRoadmapSlice'
+import roadmapsReducer from './redux/learningRoadmapSlice'
+// --- 1. Import the new admin history reducer ---
+import adminHistoryReducer from './redux/adminHistorySlice';
+
 export const store = configureStore({
   reducer: {
     auth: userReducer,
     upload: uploadReducer,
     admin: adminReducer,
-    faq: faqReducer, // Assuming you have a faqReducer defined in your redux folder
-    marquee: marqueeReducer, // Assuming you have a marqueeReducer defined in your redux folder
-    notifications: notificationReducer, // Assuming you have a notificationReducer defined in your redux folder
-    course: courseReducer, // Assuming you have a courseReducer defined in your redux folder
-    courseContent: coursecontentReducer, // Assuming you have a courseReducer defined in your redux folder
-    blog: blogReducer, // Assuming you have a blogReducer defined in your redux folder
+    faq: faqReducer,
+    marquee: marqueeReducer,
+    notifications: notificationReducer,
+    course: courseReducer,
+    courseContent: coursecontentReducer,
+    blog: blogReducer,
     subscriptions: subscriptionsReducer,
     dashboard: analysisReducer,
     homepage: homepageReducer,
@@ -52,11 +55,13 @@ export const store = configureStore({
     certificates: courseCertificatesReducer,
     studentProfile: studentProfileReducer,
     liveClasses: liveClassSliceReducer,
-    contact:contactReducer,
-    interview:interviewsReducer,
-     resume: resumeReducer,
-     ats:atsReducer,
-     roadmaps:roadmapsReducer,
+    contact: contactReducer,
+    interview: interviewsReducer,
+    resume: resumeReducer,
+    ats: atsReducer,
+    roadmaps: roadmapsReducer,
+    // --- 2. Add the reducer to the store ---
+    adminHistory: adminHistoryReducer,
   },
 });
 

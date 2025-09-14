@@ -88,16 +88,12 @@ const quizAttemptSchema = new Schema({
 
 // --- NEW SUB-SCHEMAS FOR AI TEST FEATURE ---
 
-/**
- * @description Defines a structured suggestion for a user after an AI test.
- */
 const aiSuggestionSchema = new Schema({
     suggestionText: {
         type: String,
         required: [true, 'Suggestion text is required.'],
         trim: true
     },
-    // Optional: Link directly to another lesson for review
     recommendedLesson: {
         type: Schema.Types.ObjectId,
         ref: 'Lesson'
@@ -109,9 +105,6 @@ const aiSuggestionSchema = new Schema({
     }
 });
 
-/**
- * @description Stores a single user attempt for an AI-powered test.
- */
 const aiTestAttemptSchema = new Schema({
     user: {
         type: Schema.Types.ObjectId,
@@ -126,7 +119,7 @@ const aiTestAttemptSchema = new Schema({
     dialogue: [{
         question: { type: String, required: true },
         answer: { type: String, required: true },
-        evaluation: { type: String } // AI's evaluation of the specific answer
+        evaluation: { type: String }
     }],
     finalFeedback: {
         type: String,
@@ -160,7 +153,7 @@ const lessonSchema = new Schema({
     },
     description: {
         type: String,
-        maxlength: [1000, 'Lesson description cannot be more than 1000 characters']
+        // The maxlength constraint has been removed here to allow for longer descriptions.
     },
     chapter: {
         type: Schema.Types.ObjectId,
@@ -174,7 +167,6 @@ const lessonSchema = new Schema({
     },
     type: {
         type: String,
-        // Added 'aiTest' to the list of lesson types
         enum: ['video', 'article', 'codingProblem', 'quiz', 'contest', 'aiTest'],
         required: [true, 'Please specify the type of lesson']
     },
@@ -293,7 +285,6 @@ const lessonSchema = new Schema({
                 default: 'upcoming'
             }
         },
-        // --- NEW aiTest Content Type ---
         aiTest: {
             instructions: {
                 type: String,
@@ -313,7 +304,7 @@ const lessonSchema = new Schema({
             attemptsAllowed: {
                 type: Number,
                 default: 2,
-                min: 0 // 0 for unlimited
+                min: 0
             },
             attempts: [aiTestAttemptSchema]
         }
@@ -328,7 +319,6 @@ lessonSchema.pre('save', function (next) {
     const lesson = this;
     const { type, content } = lesson;
 
-    // Added 'aiTest' and its corresponding fields
     const allowedKeys = {
         video: ['duration', 'videoUrl'],
         article: ['content', 'excerpt', 'author', 'featuredImage', 'category', 'tags', 'isPublished', 'publishedAt', 'meta', 'comments'],
@@ -342,15 +332,12 @@ lessonSchema.pre('save', function (next) {
         return next(new Error(`A lesson of type '${type}' must have a valid 'content.${type}' object.`));
     }
 
-    // This loop ensures that only the data for the correct lesson type is saved
     for (const key of Object.keys(content)) {
         if (key !== type) {
             lesson.content[key] = undefined;
         }
     }
-    
-    // (Optional) Validation for required fields within the content type can be added here if needed.
-    
+
     next();
 });
 
@@ -389,7 +376,6 @@ lessonSchema.pre(['remove', 'deleteOne'], { document: true, query: false }, asyn
 });
 
 lessonSchema.post(['save', 'deleteOne'], async function (doc) {
-    // This function assumes you have a Course model with an `updateLessonCounts` method.
     const Course = mongoose.model('Course');
     const course = await Course.findById(doc.course);
     if (course && course.updateLessonCounts) {

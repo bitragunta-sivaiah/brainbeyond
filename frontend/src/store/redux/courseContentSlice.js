@@ -176,6 +176,7 @@ export const updateLesson = createAsyncThunk(
 
 export const deleteLesson = createAsyncThunk(
   "courseContent/deleteLesson",
+  // Corrected payload to accept a single ID
   async (id, { rejectWithValue }) => {
     try {
       await API.delete(`/lessons/${id}`);

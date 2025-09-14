@@ -26,7 +26,9 @@ const upload = multer({
 
 // 2. Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+// Corrected to a valid, publicly available model
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+
 
 // Added required worker configuration for pdfjs-dist on the server
 pdfjsLib.GlobalWorkerOptions.workerSrc = `../../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs`;
@@ -56,9 +58,9 @@ const callGemini = async (prompt) => {
             throw new Error(`Gemini API request failed with status ${response.status}`);
         }
         const data = await response.json();
-        
+
         if (!data.candidates || !data.candidates[0].content.parts[0].text) {
-             throw new Error('Invalid response structure from AI service.');
+            throw new Error('Invalid response structure from AI service.');
         }
 
         const rawJsonString = data.candidates[0].content.parts[0].text;
@@ -140,19 +142,19 @@ router.post('/', async (req, res) => {
         The root JSON object must have "learning" and "practice" keys. Adhere STRICTLY to the following rules:
 
         1. "learning" Object NOte:Dont repeat the same topic or question in both sections:
-           - "studyTopics": Array of 8-10 topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
-             - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
-             - 'priority' MUST BE a Number from 1 to 5.
-           - "resources": Array of 1-2 objects per topic. Each object MUST have 'title', 'url', and 'type'.
-             - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
-           - "preparedQuestions": Array of 8-10 questions. Each object MUST have 'question', 'category', and 'keywords'. For all questions, also provide 'answer' and 'notes' (using simple HTML).
-             - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
+            - "studyTopics": Array of 8-10 topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
+              - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
+              - 'priority' MUST BE a Number from 1 to 5.
+            - "resources": Array of 1-2 objects per topic. Each object MUST have 'title', 'url', and 'type'.
+              - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
+            - "preparedQuestions": Array of 8-10 questions. Each object MUST have 'question', 'category', and 'keywords'. For all questions, also provide 'answer' and 'notes' (using simple HTML).
+              - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
 
         2. "practice" Object:
-           - "practiceProblems": Array of 2-3 coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
-             - 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'.
-             - 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
-           - "storyBank": Array of 5-6 behavioral prompts and fill all details on that prompt , situation , task, action , result and keywords. Each object MUST have: 'prompt', 'situation', 'task', 'action', 'result', and 'keywords'. For ONE prompt, provide a detailed example.  .
+            - "practiceProblems": Array of 2-3 coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
+              - 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'.
+              - 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
+            - "storyBank": Array of 5-6 behavioral prompts and fill all details on that prompt , situation , task, action , result and keywords. Each object MUST have: 'prompt', 'situation', 'task', 'action', 'result', and 'keywords'. For ONE prompt, provide a detailed example.  .
 
         Output ONLY the raw JSON object. Do not use any markdown formatting.`;
 
@@ -227,13 +229,13 @@ router.post('/:id/learning/generate', getPreparation, async (req, res) => {
         Generate a single JSON object with a "learning" key. Adhere STRICTLY to the following rules:
 
         "learning" Object NOte:Dont repeat the same topic or question in both sections:
-          - "studyTopics": Array of 3-4 NEW topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
-            - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
-            - 'priority' MUST BE a Number from 1 to 5.
-          - "resources": Array of 3 objects per topic. Each MUST have 'title', 'url', and 'type'.
-            - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
-          - "preparedQuestions": Array of 4-5 NEW questions. Each MUST have 'question','name','notes 'category', and 'keywords'.
-            - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
+            - "studyTopics": Array of 3-4 NEW topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
+              - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
+              - 'priority' MUST BE a Number from 1 to 5.
+            - "resources": Array of 3 objects per topic. Each MUST have 'title', 'url', and 'type'.
+              - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
+            - "preparedQuestions": Array of 4-5 NEW questions. Each MUST have 'question','name','notes 'category', and 'keywords'.
+              - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
 
         Output ONLY the raw JSON object.`;
 
@@ -287,13 +289,16 @@ router.delete('/:id/learning/prepared-questions', getPreparation, async (req, re
 // --- PRACTICE SECTION: AI GENERATION & CRUD ROUTES ---
 router.post('/:id/practice/generate', getPreparation, async (req, res) => {
     try {
+        const existingProblems = req.preparation.practice.practiceProblems.map(p => p.title).join('; ');
+        const existingStories = req.preparation.practice.storyBank.map(s => s.prompt).join('; ');
+
         const prompt = ` 
         Based on the interview target (Role: ${req.preparation.target.role}), generate a JSON object with "practiceProblems" and "storyBank" keys. Adhere STRICTLY to the following rules:
-        - "practiceProblems": Array of 3 relevant coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
+        - "practiceProblems": Array of 3 NEW and RELEVANT coding problems. Exclude these: [${existingProblems}]. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
           - 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'.
           - 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
-        - "storyBank": Array of 3 behavioral story prompts. Each MUST include 'prompt', 'situation', 'task', 'action', 'result', and 'keywords' .
-        Output ONLY the raw JSON object. NOte:Dont repeat the same topic or question in both sections:`;
+        - "storyBank": Array of 3 NEW behavioral story prompts. Exclude these: [${existingStories}]. Each MUST include 'prompt', 'situation', 'task', 'action', 'result', and 'keywords' .
+        Output ONLY the raw JSON object.`;
         
         const aiPractice = await callGemini(prompt);
 
@@ -338,11 +343,13 @@ router.post('/:id/assessment/upload-resume', getPreparation, upload.single('resu
 router.post('/:id/assessment/start', getPreparation, async (req, res) => {
     const { type, difficulty, resumeUrl, resumeContent } = req.body;
     try {
+        const userName = req.user.name || 'there'; // Use a fallback if the name isn't available
+
         let initialPrompt;
         if (type === 'resume-based' && resumeContent) {
-            initialPrompt = `Act as an AI interviewer for a "${req.preparation.target.role}" role. Start a '${type}' mock interview. Ask one insightful opening question based on this resume excerpt: "${resumeContent.substring(0, 2000)}...". Return a JSON object with a single key "question".`;
+            initialPrompt = `Act as an AI interviewer for a "${req.preparation.target.role}" role. Start a '${type}' mock interview. Say "Hello, ${userName}. Let's get started." Then, ask one insightful opening question based on this resume excerpt: "${resumeContent.substring(0, 2000)}...". Return a JSON object with a single key "question".`;
         } else {
-            initialPrompt = `Act as an AI interviewer for a "${req.preparation.target.role}" role. Start a '${type}' mock interview at '${difficulty}' difficulty. Ask an appropriate opening question. Return a JSON object with a single key "question".`;
+            initialPrompt = `Act as an AI interviewer for a "${req.preparation.target.role}" role. Start a '${type}' mock interview at '${difficulty}' difficulty. Say "Hello, ${userName}. Let's get started." Then, ask an appropriate opening question. Return a JSON object with a single key "question".`;
         }
         
         const response = await callGemini(initialPrompt);
@@ -386,14 +393,14 @@ router.post('/:id/assessment/:mockId/next', getPreparation, async (req, res) => 
         const transcriptText = transcript.map(t => `${t.speaker}: ${t.content}`).join('\n');
         
         const nextQuestionPrompt = `
-              You are an AI interviewer conducting a mock interview for a "${req.preparation.target.role}" role.
-              The current conversation is below:
-              ---
-              ${transcriptText}
-              ---
-              Based on the user's last answer, ask the next logical and relevant follow-up question. 
-              Keep the conversation flowing naturally. Do not end the interview.
-              Return a JSON object with a single key "nextQuestion".
+             You are an AI interviewer conducting a mock interview for a "${req.preparation.target.role}" role.
+             The current conversation is below:
+             ---
+             ${transcriptText}
+             ---
+             Based on the user's last answer, ask the next logical and relevant question.
+             Consider the overall interview structure. If the previous questions were behavioral, introduce a technical or situational question, and vice-versa. Do not end the interview.
+             Return a JSON object with a single key "nextQuestion".
         `;
         
         const response = await callGemini(nextQuestionPrompt);
@@ -420,7 +427,7 @@ router.post('/:id/assessment/:mockId/warning', getPreparation, async (req, res) 
     }
     try {
         const transcriptText = transcript.map(t => `${t.speaker}: ${t.content}`).join('\n');
-        const warningPrompt = `Analyze this interview transcript: "${transcriptText}". The 'user' is off-topic. Generate a gentle, one-sentence warning to redirect them. Return JSON: { "warning": "..." }`;
+        const warningPrompt = `Analyze this interview transcript: "${transcriptText}". The 'user' is taking a wrong direction or going off-topic. Generate a gentle, one-sentence warning to redirect them back to the interview's core topics. Return JSON: { "warning": "..." }`;
         const response = await callGemini(warningPrompt);
         res.status(200).json({ success: true, warning: response.warning });
     } catch (error) {
@@ -472,7 +479,7 @@ router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
 
         // This atomic update operation is the correct way to prevent race condition errors (VersionError).
         const updateResult = await InterviewPreparation.updateOne(
-            { _id: req.preparation._id },
+            { _id: req.preparation._id, 'assessment.aiMockInterviews._id': mockId },
             { 
                 $set: {
                     'assessment.aiMockInterviews.$[interview].transcript': transcript,
@@ -497,7 +504,7 @@ router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
         );
         
         if (!updatedInterview) {
-             return res.status(404).json({ success: false, message: 'Could not retrieve the updated interview.' });
+            return res.status(404).json({ success: false, message: 'Could not retrieve the updated interview.' });
         }
         
         res.status(200).json({ success: true, data: updatedInterview });

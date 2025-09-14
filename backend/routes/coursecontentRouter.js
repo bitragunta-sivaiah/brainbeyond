@@ -1,25 +1,23 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import axios from 'axios';
+import {
+    protect,
+    authorize
+} from '../middleware/authMiddleware.js';
 
 // Import all required models
 import Course from '../models/Course.js';
 import Chapter from '../models/Chapter.js';
 import Lesson from '../models/Lesson.js';
 import LiveClass from '../models/LiveClass.js';
- 
 import User from '../models/User.js'; // User model now contains instructor data
 import Notification from '../models/Notification.js';
 import Subscription from '../models/Subscription.js';
 
-import {
-    protect,
-    authorize
-} from '../middleware/authMiddleware.js';
-
 // --- Configuration ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
 
 const router = express.Router();
 
@@ -165,9 +163,9 @@ const sendLiveClassNotification = async (liveClassId, eventType = 'created') => 
         }
 
         // 4. Create notification payload for each user
-        const title = eventType === 'created'
-            ? `📢 New Live Class Scheduled: ${liveClass.title}`
-            : `🔄 Live Class Updated: ${liveClass.title}`;
+        const title = eventType === 'created' ?
+            `📢 New Live Class Scheduled: ${liveClass.title}` :
+            `🔄 Live Class Updated: ${liveClass.title}`;
 
         const message = `A live class for the course "${course.title}" is scheduled for ${new Date(liveClass.schedule.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}. Click to join!`;
 
@@ -193,8 +191,6 @@ const sendLiveClassNotification = async (liveClassId, eventType = 'created') => 
 };
 
 // --- Course Routes ---
-
-
 router.get('/course', async (req, res) => {
     try {
         const courses = await Course.find({ isPublished: true })
@@ -202,18 +198,13 @@ router.get('/course', async (req, res) => {
             .populate({
                 path: 'chapters',
                 options: { sort: { order: 1 } },
-                populate: {
+                populate: [{
                     path: 'lessons',
                     options: { sort: { order: 1 } },
-                }
-            })
-            .populate({
-                path: 'chapters',
-                options: { sort: { order: 1 } },
-                populate: {
+                }, {
                     path: 'liveClasses',
-                    options: { sort: { order: 1 } },
-                }
+                    options: { sort: { 'schedule.startTime': 1 } },
+                }]
             });
         res.status(200).json(courses);
     } catch (error) {
@@ -265,7 +256,7 @@ router.put('/course/:id', protect, authorize('admin', 'instructor'), async (req,
             new: true,
             runValidators: true
         }).populate('instructors', 'username email profileInfo.firstName profileInfo.lastName')
-          .populate('coupons', 'code discountType discountValue');
+            .populate('coupons', 'code discountType discountValue');
         if (!course) {
             return res.status(404).json({ message: 'Course not found' });
         }
@@ -297,7 +288,6 @@ router.delete('/course/:id', protect, authorize('admin', 'instructor'), async (r
 });
 
 // --- Chapter Routes ---
-
 router.post('/courses/:courseId/chapters', protect, authorize('admin', 'instructor'), async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -374,7 +364,6 @@ router.delete('/chapters/:id', protect, authorize('admin', 'instructor'), async 
     }
 });
 
-
 router.put('/courses/:courseId/chapters/reorder', protect, authorize('admin', 'instructor'), async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -401,7 +390,6 @@ router.put('/courses/:courseId/chapters/reorder', protect, authorize('admin', 'i
 });
 
 // --- Lesson Routes ---
-
 router.post('/chapters/:chapterId/lessons', protect, authorize('admin', 'instructor'), async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -436,9 +424,11 @@ router.post('/chapters/:chapterId/lessons/ai', protect, authorize('admin', 'inst
     try {
         const { title, type, prompt } = req.body;
         if (!title || !type || !prompt) {
+            await session.abortTransaction();
+            session.endSession();
             return res.status(400).json({ message: 'Missing required fields: title, type, and prompt.' });
         }
-        
+
         const chapter = await Chapter.findById(req.params.chapterId).session(session);
         if (!chapter) {
             await session.abortTransaction();
@@ -450,124 +440,124 @@ router.post('/chapters/:chapterId/lessons/ai', protect, authorize('admin', 'inst
         switch (type) {
             case 'video':
                 contentSchemaHint = `
-                        "video": {
-                            "duration": { "type": "NUMBER", "description": "Duration of the video in minutes, e.g., 30" },
-                            "videoUrl": { "type": "STRING", "description": "URL of the video content, e.g., 'https://example.com/video.mp4'" }
-                        }
+                    "video": {
+                        "duration": { "type": "NUMBER", "description": "Duration of the video in minutes, e.g., 30" },
+                        "videoUrl": { "type": "STRING", "description": "URL of the video content, e.g., 'https://example.com/video.mp4'" }
+                    }
                 `;
                 break;
             case 'article':
                 contentSchemaHint = `
-                        "article": {
-                            "content": { "type": "STRING", "description": "Full markdown content of the article" },
-                            "excerpt": { "type": "STRING", "description": "A short summary of the article, max 300 characters" },
-                            "featuredImage": { "type": "STRING", "description": "Optional URL for a featured image, e.g., 'https://placehold.co/600x400/CCCCCC/000000?text=Article+Image'" },
-                            "category": { "type": "STRING", "enum": ["Web Development", "Data Science", "Mobile Development", "Design", "Marketing", "Other"], "description": "Category of the article" },
-                            "tags": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "List of relevant tags, e.g., ['react', 'javascript']" },
-                            "isPublished": { "type": "BOOLEAN", "description": "Whether the article should be published, default to false" }
-                        }
+                    "article": {
+                        "content": { "type": "STRING", "description": "Full HTML content of the article" },
+                        "excerpt": { "type": "STRING", "description": "A short summary of the article, max 300 characters" },
+                        "featuredImage": { "type": "STRING", "description": "Optional URL for a featured image, e.g., 'https://placehold.co/600x400/CCCCCC/000000?text=Article+Image'" },
+                        "category": { "type": "STRING", "enum": ["Web Development", "Data Science", "Mobile Development", "Design", "Marketing", "Other"], "description": "Category of the article" },
+                        "tags": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "List of relevant tags, e.g., ['react', 'javascript']" },
+                        "isPublished": { "type": "BOOLEAN", "description": "Whether the article should be published, default to false" }
+                    }
                 `;
                 break;
             case 'codingProblem':
                 contentSchemaHint = `
-                        "codingProblem": {
-                            "description": { "type": "STRING", "description": "Detailed description of the coding problem, max 1000 characters" },
-                            "difficulty": { "type": "STRING", "enum": ["easy", "medium", "hard"], "description": "Difficulty level of the problem" },
-                            "starterCode": { "type": "STRING", "description": "Initial code snippet provided to the user" },
-                            "solutionCode": { "type": "STRING", "description": "Complete solution code for the problem" },
-                            "testCases": {
-                                "type": "ARRAY",
-                                "items": {
-                                    "type": "OBJECT",
-                                    "properties": {
-                                        "input": { "type": "STRING", "description": "Test case input (can be empty)" },
-                                        "output": { "type": "STRING", "description": "Expected output for the test case" },
-                                        "isHidden": { "type": "BOOLEAN", "description": "Whether the test case should be hidden from the user" }
-                                    },
-                                    "required": ["output"]
+                    "codingProblem": {
+                        "description": { "type": "STRING", "description": "Detailed description of the coding problem, max 1000 characters" },
+                        "difficulty": { "type": "STRING", "enum": ["easy", "medium", "hard"], "description": "Difficulty level of the problem" },
+                        "starterCode": { "type": "STRING", "description": "Initial code snippet provided to the user" },
+                        "solutionCode": { "type": "STRING", "description": "Complete solution code for the problem" },
+                        "testCases": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "input": { "type": "STRING", "description": "Test case input (can be empty)" },
+                                    "output": { "type": "STRING", "description": "Expected output for the test case" },
+                                    "isHidden": { "type": "BOOLEAN", "description": "Whether the test case should be hidden from the user" }
                                 },
-                                "description": "Array of test cases for the problem"
+                                "required": ["output"]
                             },
-                            "allowedLanguages": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "List of allowed programming languages, e.g., ['javascript', 'python']" },
-                            "points": { "type": "NUMBER", "description": "Points awarded for solving the problem, e.g., 10" },
-                            "hints": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Optional hints for the problem" },
-                            "topics": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Relevant topics, e.g., ['arrays', 'recursion']" }
-                        }
+                            "description": "Array of test cases for the problem"
+                        },
+                        "allowedLanguages": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "List of allowed programming languages, e.g., ['javascript', 'python']" },
+                        "points": { "type": "NUMBER", "description": "Points awarded for solving the problem, e.g., 10" },
+                        "hints": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Optional hints for the problem" },
+                        "topics": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Relevant topics, e.g., ['arrays', 'recursion']" }
+                    }
                 `;
                 break;
             case 'quiz':
                 contentSchemaHint = `
-                        "quiz": {
-                            "quizInstructions": { "type": "STRING", "description": "Instructions for the quiz, max 1000 characters" },
-                            "questions": {
-                                "type": "ARRAY",
-                                "items": {
-                                    "type": "OBJECT",
-                                    "properties": {
-                                        "questionText": { "type": "STRING", "description": "The text of the question, max 500 characters" },
-                                        "questionType": { "type": "STRING", "enum": ["single-choice", "multiple-choice", "true-false", "short-answer", "fill-in-the-blank"], "description": "Type of question" },
-                                        "options": {
-                                            "type": "ARRAY",
-                                            "items": {
-                                                "type": "OBJECT",
-                                                "properties": {
-                                                    "optionText": { "type": "STRING", "description": "Text of the option" },
-                                                    "isCorrect": { "type": "BOOLEAN", "description": "Whether this option is correct" }
-                                                },
-                                                "required": ["optionText"]
+                    "quiz": {
+                        "quizInstructions": { "type": "STRING", "description": "Instructions for the quiz, max 1000 characters" },
+                        "questions": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "questionText": { "type": "STRING", "description": "The text of the question, max 500 characters" },
+                                    "questionType": { "type": "STRING", "enum": ["single-choice", "multiple-choice", "true-false", "short-answer", "fill-in-the-blank"], "description": "Type of question" },
+                                    "options": {
+                                        "type": "ARRAY",
+                                        "items": {
+                                            "type": "OBJECT",
+                                            "properties": {
+                                                "optionText": { "type": "STRING", "description": "Text of the option" },
+                                                "isCorrect": { "type": "BOOLEAN", "description": "Whether this option is correct" }
                                             },
-                                            "description": "Options for single/multiple choice questions"
+                                            "required": ["optionText"]
                                         },
-                                        "correctAnswer": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Correct answer(s) for short answer/fill-in-the-blank" },
-                                        "explanation": { "type": "STRING", "description": "Explanation for the answer, max 500 characters" },
-                                        "points": { "type": "NUMBER", "description": "Points for this question, e.g., 1" }
+                                        "description": "Options for single/multiple choice questions"
                                     },
-                                    "required": ["questionText", "questionType", "points"]
+                                    "correctAnswer": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Correct answer(s) for short answer/fill-in-the-blank" },
+                                    "explanation": { "type": "STRING", "description": "Explanation for the answer, max 500 characters" },
+                                    "points": { "type": "NUMBER", "description": "Points for this question, e.g., 1" }
                                 },
-                                "description": "Array of quiz questions"
+                                "required": ["questionText", "questionType", "points"]
                             },
-                            "passScore": { "type": "NUMBER", "description": "Percentage score required to pass, e.g., 50" },
-                            "attemptsAllowed": { "type": "NUMBER", "description": "Number of attempts allowed, e.g., 1" },
-                            "shuffleQuestions": { "type": "BOOLEAN", "description": "Whether to shuffle questions, default to false" },
-                            "showCorrectAnswersImmediately": { "type": "BOOLEAN", "description": "Whether to show correct answers immediately, default to false" }
-                        }
+                            "description": "Array of quiz questions"
+                        },
+                        "passScore": { "type": "NUMBER", "description": "Percentage score required to pass, e.g., 50" },
+                        "attemptsAllowed": { "type": "NUMBER", "description": "Number of attempts allowed, e.g., 1" },
+                        "shuffleQuestions": { "type": "BOOLEAN", "description": "Whether to shuffle questions, default to false" },
+                        "showCorrectAnswersImmediately": { "type": "BOOLEAN", "description": "Whether to show correct answers immediately, default to false" }
+                    }
                 `;
                 break;
             case 'contest':
                 contentSchemaHint = `
-                        "contest": {
-                            "description": { "type": "STRING", "description": "Description of the contest, max 1000 characters" },
-                            "startTime": { "type": "STRING", "format": "date-time", "description": "Start time of the contest in ISO format, e.g., '2025-08-27T10:00:00Z'" },
-                            "endTime": { "type": "STRING", "format": "date-time", "description": "End time of the contest in ISO format, e.g., '2025-08-27T12:00:00Z'" },
-                            "problems": {
-                                "type": "ARRAY",
-                                "items": { "type": "STRING", "description": "IDs of coding problems included in the contest (referencing Lesson._id of type codingProblem)" },
-                                "description": "List of coding problem IDs for the contest"
-                            },
-                            "maxParticipants": { "type": "NUMBER", "description": "Maximum number of participants, e.g., 100" },
-                            "isPublic": { "type": "BOOLEAN", "description": "Whether the contest is public, default to true" },
-                            "rules": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "List of contest rules" },
-                            "prices": {
-                                "type": "ARRAY",
-                                "items": {
-                                    "type": "OBJECT",
-                                    "properties": {
-                                        "position": { "type": "NUMBER", "description": "Winning position, e.g., 1" },
-                                        "amount": { "type": "NUMBER", "description": "Prize amount, e.g., 500" }
-                                    },
-                                    "required": ["position", "amount"]
+                    "contest": {
+                        "description": { "type": "STRING", "description": "Description of the contest, max 1000 characters" },
+                        "startTime": { "type": "STRING", "format": "date-time", "description": "Start time of the contest in ISO format, e.g., '2025-08-27T10:00:00Z'" },
+                        "endTime": { "type": "STRING", "format": "date-time", "description": "End time of the contest in ISO format, e.g., '2025-08-27T12:00:00Z'" },
+                        "problems": {
+                            "type": "ARRAY",
+                            "items": { "type": "STRING", "description": "IDs of coding problems included in the contest (referencing Lesson._id of type codingProblem)" },
+                            "description": "List of coding problem IDs for the contest"
+                        },
+                        "maxParticipants": { "type": "NUMBER", "description": "Maximum number of participants, e.g., 100" },
+                        "isPublic": { "type": "BOOLEAN", "description": "Whether the contest is public, default to true" },
+                        "rules": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "List of contest rules" },
+                        "prices": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "position": { "type": "NUMBER", "description": "Winning position, e.g., 1" },
+                                    "amount": { "type": "NUMBER", "description": "Prize amount, e.g., 500" }
                                 },
-                                "description": "List of prizes for different positions"
+                                "required": ["position", "amount"]
                             },
-                            "status": { "type": "STRING", "enum": ["upcoming", "ongoing", "completed", "cancelled"], "description": "Current status of the contest, default to 'upcoming'" }
-                        }
+                            "description": "List of prizes for different positions"
+                        },
+                        "status": { "type": "STRING", "enum": ["upcoming", "ongoing", "completed", "cancelled"], "description": "Current status of the contest, default to 'upcoming'" }
+                    }
                 `;
                 break;
             default:
                 contentSchemaHint = `{}`;
         }
 
-        const aiPrompt = `Generate a JSON object for a "${type}" lesson based on this prompt: "${prompt}". The JSON should strictly adhere to the following schema structure. Ensure all required fields for the specified lesson type are populated with realistic and relevant data. Also, generate 3-5 high-quality external resources (e.g., links to official documentation, tutorials, articles) that are relevant to the lesson's topic. Do not include any extra text or markdown formatting outside the JSON object and dont include that **.
+        const aiPrompt = `Generate a JSON object for a "${type}" lesson based on this prompt: "${prompt}". The JSON should strictly adhere to the following schema structure. Ensure all required fields for the specified lesson type are populated with realistic and relevant data. For 'article' content, use proper HTML tags (e.g., <p>, <h1>, <ul>) to structure the content. For 'video' and 'codingProblem' content, provide 100% accurate and genuine performance data (e.g., video duration, execution time). Also, generate 3-5 high-quality external resources (e.g., links to official documentation, tutorials, articles) that are relevant to the lesson's topic. Do not include any extra text or markdown formatting outside the JSON object.
 
         {
             "title": "Lesson Title",
@@ -592,10 +582,14 @@ router.post('/chapters/:chapterId/lessons/ai', protect, authorize('admin', 'inst
         }
         `;
 
-        const response = await axios.post(`${GEMINI_API_URL}`, {
-            contents: [{ parts: [{ text: aiPrompt }] }]
+        const response = await axios.post(`${API_URL}`, {
+            contents: [{
+                parts: [{
+                    text: aiPrompt
+                }]
+            }]
         });
-        
+
         let generatedContent = response.data.candidates[0].content.parts[0].text;
 
         const jsonMatch = generatedContent.match(/```json\n([\s\S]*?)\n```/);
@@ -624,13 +618,13 @@ router.post('/chapters/:chapterId/lessons/ai', protect, authorize('admin', 'inst
         }
 
         await newLesson.save({ session });
-        
+
         chapter.lessons.push(newLesson._id);
         await chapter.save({ session });
 
         await session.commitTransaction();
         session.endSession();
-        
+
         res.status(201).json({
             message: 'Lesson created successfully with AI assistance',
             lesson: newLesson
@@ -710,7 +704,6 @@ router.put('/chapters/:chapterId/lessons/reorder', protect, authorize('admin', '
 });
 
 // --- Live Class Routes (Jitsi) ---
-
 router.post('/chapters/:chapterId/live-classes', protect, authorize('admin', 'instructor'), async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -732,7 +725,7 @@ router.post('/chapters/:chapterId/live-classes', protect, authorize('admin', 'in
 
         // Send notifications after the transaction is successfully committed
         sendLiveClassNotification(newLiveClass._id, 'created').catch(err => {
-             console.error('Notification sending failed non-blockingly:', err);
+            console.error('Notification sending failed non-blockingly:', err);
         });
 
         res.status(201).json(newLiveClass);
@@ -777,7 +770,7 @@ router.put('/live-classes/:id', protect, authorize('admin', 'instructor'), async
         if (!liveClass) {
             return res.status(404).json({ message: 'Live class not found' });
         }
-        
+
         // Send notifications about the update
         sendLiveClassNotification(liveClass._id, 'updated').catch(err => {
             console.error('Notification sending failed non-blockingly:', err);
@@ -813,7 +806,6 @@ router.delete('/live-classes/:id', protect, authorize('admin', 'instructor'), as
 });
 
 // --- Doubt and Reply Routes ---
-
 router.post('/lessons/:lessonId/doubts', protect, async (req, res) => {
     try {
         const { question } = req.body;
@@ -827,7 +819,7 @@ router.post('/lessons/:lessonId/doubts', protect, async (req, res) => {
         };
         lesson.doubts.push(newDoubt);
         await lesson.save();
-        
+
         res.status(201).json({ message: 'Doubt submitted successfully', doubt: lesson.doubts[lesson.doubts.length - 1] });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });

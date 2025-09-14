@@ -29,6 +29,7 @@ import {
   Phone
 } from 'lucide-react';
 import { MdMeetingRoom } from 'react-icons/md';
+import { SiAdminer } from 'react-icons/si';
 
 // Sidebar navigation links data, now organized into categories with colors
 const navCategories = [
@@ -39,7 +40,7 @@ const navCategories = [
     colorClass: 'text-category-main',
     links: [
       { name: 'Dashboard', path: '/admin/dashboard', icon: <Grid size={20} /> },
-      { name: 'Interview Questions', path: '/admin/interview-questions', icon: <MdMeetingRoom size={20} /> },
+      { name: 'Admin Data Access', path: '/admin/history-access', icon: <SiAdminer size={20} /> },
     ],
   },
   {

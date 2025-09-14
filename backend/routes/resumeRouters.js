@@ -18,7 +18,8 @@ const router = express.Router();
 
 // Gemini API Configuration
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+// UPDATED API URL to use the new model
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
 
 // Multer configuration for file uploads
 const storage = multer.memoryStorage();

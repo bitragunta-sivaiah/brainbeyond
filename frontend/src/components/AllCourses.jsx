@@ -3,14 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { fetchAllCourses } from '../store/redux/courseSlice';
 import { motion } from 'framer-motion';
-import {
-    Clock,
-    Euro,
-    Loader2,
-} from 'lucide-react';
-import { FaChalkboardTeacher } from 'react-icons/fa';
-import { BsArrowRightCircle } from 'react-icons/bs';
-import { FaStar } from 'react-icons/fa'; // Import FaStar for rating display
+import { FaChalkboardTeacher, FaStar, FaInfoCircle } from 'react-icons/fa';
 
 const Courses = () => {
     const dispatch = useDispatch();
@@ -25,18 +18,27 @@ const Courses = () => {
     const getLevelColor = (level) => {
         switch (level) {
             case 'beginner':
-                return 'bg-green-500/20 text-green-700 dark:text-green-300';
+                return 'bg-secondary text-primary';
             case 'intermediate':
-                return 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
+                return 'bg-accent text-accent-foreground';
             case 'advanced':
-                return 'bg-red-500/20 text-red-700 dark:text-red-300';
+                return 'bg-destructive/20 text-destructive';
             default:
-                return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';
+                return 'bg-muted text-muted-foreground';
         }
     };
 
+    const cardVariants = {
+        hidden: { opacity: 0, y: 50 },
+        visible: {
+            opacity: 1,
+            y: 0,
+            transition: { type: 'spring', stiffness: 100, damping: 10 },
+        },
+    };
+
     return (
-        <div className=" p-8 bg-background text-foreground">
+        <div className="p-4 md:p-8 bg-background text-foreground min-h-screen">
             <div className="max-w-7xl mx-auto">
                 <motion.h1
                     initial={{ opacity: 0, y: -20 }}
@@ -44,114 +46,105 @@ const Courses = () => {
                     transition={{ duration: 0.5 }}
                     className="text-4xl md:text-5xl font-extrabold text-center mb-12 text-primary font-display"
                 >
-                    Explore Our Courses 🚀
+                    Discover Your Next Course 🚀
                 </motion.h1>
-
+                 
                 {status === 'loading' && (
                     <div className="flex justify-center items-center h-64">
-                        <Loader2 className="animate-spin text-primary w-12 h-12" />
+                        <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                            className="w-12 h-12 border-4 border-t-4 border-gray-200 border-t-primary rounded-full"
+                        />
                     </div>
                 )}
-
+                 
                 {status === 'failed' && (
                     <div className="text-center text-destructive text-lg font-semibold">
-                        <p>Error: {error}</p>
+                        <p>Error: Failed to load courses. Please try again later.</p>
                     </div>
                 )}
-
+                 
                 {status === 'succeeded' && courses.length === 0 && (
                     <div className="text-center text-muted-foreground text-lg">
                         No courses available at the moment.
                     </div>
                 )}
-
+                 
                 {status === 'succeeded' && courses.length > 0 && (
                     <motion.div
-                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+                        className="flex flex-wrap md:justify-center gap-10"
                         initial="hidden"
                         animate="visible"
-                        variants={{
-                            hidden: { opacity: 0 },
-                            visible: {
-                                opacity: 1,
-                                transition: {
-                                    staggerChildren: 0.1,
-                                },
-                            },
-                        }}
+                        variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
                     >
                         {courses.map((course) => (
                             <motion.div
                                 key={course._id}
-                                className="bg-card text-card-foreground border border-border rounded-xl shadow-md overflow-hidden flex flex-col transition-transform hover:scale-[1.02] duration-300 group"
-                                variants={{
-                                    hidden: { opacity: 0, y: 50 },
-                                    visible: { opacity: 1, y: 0 },
-                                }}
+                                className="bg-card text-card-foreground max-w-[350px] rounded-md shadow hover:shadow-sm overflow-hidden flex flex-col transition-all duration-500 group border border-border"
+                                variants={cardVariants}
+                                whileHover={{ scale: 1.05, translateY: -5 }}
                             >
-                                <div className="relative w-full h-48 overflow-hidden">
+                                <div className="relative w-full h-56 overflow-hidden">
                                     <img
                                         src={course.thumbnail}
                                         alt={course.title}
                                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                     />
                                     {course.isFeatured && (
-                                        <div className="absolute top-4 right-4 bg-accent text-accent-foreground text-sm font-bold px-3 py-1 rounded-full uppercase">
+                                        <div className="absolute top-4 left-4 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full shadow-lg transform -rotate-6">
                                             Featured
                                         </div>
                                     )}
                                 </div>
 
-                                <div className="p-6 flex flex-col flex-grow">
-                                    <div className="flex items-center justify-between mb-2">
+                                <div className="p-4 md:p-5 flex flex-col flex-grow">
+                                    <div className="flex items-center justify-between mb-4">
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full ${getLevelColor(course.level)}`}>
-                                            {course.level}
+                                            {course.level.charAt(0).toUpperCase() + course.level.slice(1)}
                                         </span>
-                                        {/* Since totalLessons and duration aren't in the response, they are removed. */}
+                                        <div className="flex items-center gap-1 text-accent-foreground">
+                                            <FaStar size={14} />
+                                            <span className="text-sm font-semibold text-foreground">{course.rating?.toFixed(1) || 'N/A'}</span>
+                                        </div>
                                     </div>
 
-                                    <h3 className="text-xl font-heading font-bold mt-2 mb-4 line-clamp-2">
+                                    <h3 className="md:text-xl text-md font-heading text-foreground mb-2 line-clamp-2">
                                         {course.title}
                                     </h3>
 
-                                    <p className="text-muted-foreground text-sm flex-grow line-clamp-3">
+                                    <p className="md:text-sm text-xs text-muted-foreground mb-4 line-clamp-3">
                                         {course.shortDescription}
                                     </p>
-
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground mt-4">
+                                    
+                                    <div className="flex items-center gap-2 text-sm text-custom mt-auto">
                                         <FaChalkboardTeacher size={16} className="text-primary" />
-                                        <span>
-                                            {/* Corrected: Mapping instructors to their full name if the data is available */}
+                                        <span className="font-medium">
                                             {course.instructors && course.instructors.length > 0
-                                                ? course.instructors.map((inst) => `${inst.profileInfo.firstName} ${inst.profileInfo.lastName}`).join(', ')
-                                                : 'Instructor'}
+                                                ? course.instructors.map(inst => inst.username).join(', ')
+                                                : 'Unknown Instructor'}
                                         </span>
                                     </div>
-
-                                    <div className="flex items-center justify-between mt-4 border-t border-border pt-4">
-                                        <div className="flex items-center gap-1 text-lg font-bold">
-                                             
-                                            <span className={`${course.isFree ?'text-green-800':'text-primary'}`}>
-                                               ₹ {course.isFree ? 'Free' : course.discountedPrice > 0 ? course.discountedPrice : course.price}
+                                    
+                                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+                                        <div className="flex items-center gap-1 text-xl font-bold">
+                                            <span className={`${course.isFree ? 'text-primary' : 'text-primary'}`}>
+                                                ₹ {course.isFree ? 'Free' : course.discountedPrice > 0 ? course.discountedPrice : course.price}
                                             </span>
                                             {course.discountedPrice > 0 && (
-                                                <span className="text-custom line-through text-sm ml-1">
+                                                <span className="text-muted-foreground line-through text-sm ml-1">
                                                     {course.price}
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <FaStar className="text-yellow-400" />
-                                            <span className="font-semibold text-foreground">{course.rating?.toFixed(1) || 'N/A'}</span>
-                                        </div>
+                                        <Link
+                                            to={`/courses/${course.slug}`}
+                                            className="px-4 py-2 bg-primary text-primary-foreground rounded-full shadow-lg   group-hover:opacity-100 transition-all duration-300 ease-in-out font-medium flex items-center gap-2"
+                                        >
+                                            <FaInfoCircle size={16} />
+                                            Details
+                                        </Link>
                                     </div>
-
-                                    <Link
-                                        to={`/courses/${course.slug}`}
-                                        className="mt-4 text-center text-primary hover:text-primary/80 transition-colors font-semibold flex items-center gap-1 justify-center"
-                                    >
-                                        Learn More <BsArrowRightCircle size={18} />
-                                    </Link>
                                 </div>
                             </motion.div>
                         ))}

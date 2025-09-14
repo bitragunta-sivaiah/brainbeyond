@@ -75,16 +75,16 @@ router.use(protect, authorize('student'));
 // ----------------------------------------------------------------------------------
 
 /**
- * @route   GET /api/student/courses
- * @desc    Get all available (published) courses for browsing
- * @access  Private (Student)
+ * @route   GET /api/student/courses
+ * @desc    Get all available (published) courses for browsing
+ * @access  Private (Student)
  */
 router.get('/', async (req, res) => {
     try {
         const courses = await Course.find({ isPublished: true })
             .populate({
                 path: 'instructors',
-                select: 'profileInfo.firstName profileInfo.lastName profileInfo.avatar',
+                select: 'username profileInfo.firstName profileInfo.lastName profileInfo.avatar',
             })
             .select(
                 'title slug shortDescription thumbnail category price discountedPrice isFree rating totalStudents level'
@@ -97,15 +97,15 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * @route   GET /api/student/courses/my-courses
- * @desc    Get all courses the student has access to, including their progress
- * @access  Private (Student)
+ * @route   GET /api/student/courses/my-courses
+ * @desc    Get all courses the student has access to, including their progress
+ * @access  Private (Student)
  */
 router.get('/my-courses', async (req, res) => {
     try {
         const userId = req.user.id;
         const courseFieldsToSelect = 'title slug thumbnail shortDescription category totalLessons level reviews rating duration instructors';
-        const instructorFieldsToSelect = 'profileInfo.firstName profileInfo.lastName profileInfo.avatar';
+        const instructorFieldsToSelect = 'username profileInfo.firstName profileInfo.lastName profileInfo.avatar';
 
         const user = await User.findById(userId)
             .select('purchasedSubscriptions enrolledCourses enrollCoursePurchase')
@@ -198,15 +198,15 @@ router.get('/my-courses', async (req, res) => {
 });
 
 /**
- * @route   GET /api/student/courses/:slug/details
- * @desc    Get course details. Shows full curriculum and lesson content only if user has access.
- * @access  Private (Student)
+ * @route   GET /api/student/courses/:slug/details
+ * @desc    Get course details. Shows full curriculum and lesson content only if user has access.
+ * @access  Private (Student)
  */
 router.get('/:slug/details', async (req, res) => {
     try {
         const course = await Course.findOne({ slug: req.params.slug })
-            .populate('instructors', 'profileInfo.firstName profileInfo.lastName profileInfo.avatar')
-            .populate('reviews.user', 'profileInfo.firstName profileInfo.lastName profileInfo.avatar');
+                                     .populate('instructors', 'username profileInfo.firstName profileInfo.lastName profileInfo.avatar')
+                                     .populate('reviews.user', 'username profileInfo.firstName profileInfo.lastName profileInfo.avatar');
 
         if (!course) {
             return res.status(404).json({ success: false, message: 'Course not found' });
@@ -232,7 +232,9 @@ router.get('/:slug/details', async (req, res) => {
             .filter(i => i) // Filter out any null instructors
             .map(i => ({
                 _id: i._id,
-                fullName: i.profileInfo.firstName + ' ' + i.profileInfo.lastName,
+                username: i.username,
+                firstName: i.profileInfo.firstName,
+                lastName: i.profileInfo.lastName,
                 avatar: i.profileInfo.avatar
             }));
 
@@ -242,7 +244,9 @@ router.get('/:slug/details', async (req, res) => {
                 ...r,
                 user: {
                     _id: r.user._id,
-                    fullName: r.user.profileInfo.firstName + ' ' + r.user.profileInfo.lastName,
+                    username: r.user.username,
+                    firstName: r.user.profileInfo.firstName,
+                    lastName: r.user.profileInfo.lastName,
                     avatar: r.user.profileInfo.avatar
                 }
             }));
@@ -260,9 +264,9 @@ router.get('/:slug/details', async (req, res) => {
 // ----------------------------------------------------------------------------------
 
 /**
- * @route   POST /api/student/courses/:slug/enroll-free
- * @desc    Enroll the current student in a FREE course
- * @access  Private (Student)
+ * @route   POST /api/student/courses/:slug/enroll-free
+ * @desc    Enroll the current student in a FREE course
+ * @access  Private (Student)
  */
 router.post('/:slug/enroll-free', async (req, res) => {
     const session = await mongoose.startSession();
@@ -326,9 +330,9 @@ router.post('/:slug/enroll-free', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/:slug/create-order
- * @desc    Create a Razorpay order to purchase a course
- * @access  Private (Student)
+ * @route   POST /api/student/courses/:slug/create-order
+ * @desc    Create a Razorpay order to purchase a course
+ * @access  Private (Student)
  */
 router.post('/:slug/create-order', async (req, res) => {
     const session = await mongoose.startSession();
@@ -407,9 +411,9 @@ router.post('/:slug/create-order', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/payment/verify
- * @desc    Verify Razorpay payment and grant course access
- * @access  Private (Student)
+ * @route   POST /api/student/courses/payment/verify
+ * @desc    Verify Razorpay payment and grant course access
+ * @access  Private (Student)
  */
 router.post('/payment/verify', async (req, res) => {
     const session = await mongoose.startSession();
@@ -501,9 +505,9 @@ router.post('/payment/verify', async (req, res) => {
 // ----------------------------------------------------------------------------------
 
 /**
- * @route   POST /api/student/courses/lessons/:lessonId/complete
- * @desc    Mark a lesson as complete
- * @access  Private (Student)
+ * @route   POST /api/student/courses/lessons/:lessonId/complete
+ * @desc    Mark a lesson as complete
+ * @access  Private (Student)
  */
 router.post('/lessons/:lessonId/complete', async (req, res) => {
     const session = await mongoose.startSession();
@@ -569,9 +573,9 @@ router.post('/lessons/:lessonId/complete', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/lessons/:lessonId/incomplete
- * @desc    Mark a lesson as incomplete (removes it from progress)
- * @access  Private (Student)
+ * @route   POST /api/student/courses/lessons/:lessonId/incomplete
+ * @desc    Mark a lesson as incomplete (removes it from progress)
+ * @access  Private (Student)
  */
 router.post('/lessons/:lessonId/incomplete', async (req, res) => {
     const session = await mongoose.startSession();
@@ -631,9 +635,9 @@ router.post('/lessons/:lessonId/incomplete', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/lessons/:lessonId/doubt
- * @desc    Add a doubt/question to a lesson
- * @access  Private (Student)
+ * @route   POST /api/student/courses/lessons/:lessonId/doubt
+ * @desc    Add a doubt/question to a lesson
+ * @access  Private (Student)
  */
 router.post('/lessons/:lessonId/doubt', async (req, res) => {
     const session = await mongoose.startSession();
@@ -711,9 +715,9 @@ router.post('/lessons/:lessonId/doubt', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/lessons/:lessonId/submit-quiz
- * @desc    Submit answers for a quiz and get the result.
- * @access  Private (Student)
+ * @route   POST /api/student/courses/lessons/:lessonId/submit-quiz
+ * @desc    Submit answers for a quiz and get the result.
+ * @access  Private (Student)
  */
 router.post('/lessons/:lessonId/submit-quiz', async (req, res) => {
     const session = await mongoose.startSession();
@@ -820,9 +824,9 @@ router.post('/lessons/:lessonId/submit-quiz', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/lessons/:lessonId/submit-coding-problem
- * @desc    Submit code for a coding problem.
- * @access  Private (Student)
+ * @route   POST /api/student/courses/lessons/:lessonId/submit-coding-problem
+ * @desc    Submit code for a coding problem.
+ * @access  Private (Student)
  */
 router.post('/lessons/:lessonId/submit-coding-problem', async (req, res) => {
     const session = await mongoose.startSession();
@@ -918,9 +922,9 @@ router.post('/lessons/:lessonId/submit-coding-problem', async (req, res) => {
 // ----------------------------------------------------------------------------------
 
 /**
- * @route   GET /api/student/courses/:slug/progress
- * @desc    Get the student's progress for a specific enrolled course
- * @access  Private (Student)
+ * @route   GET /api/student/courses/:slug/progress
+ * @desc    Get the student's progress for a specific enrolled course
+ * @access  Private (Student)
  */
 router.get('/:slug/progress', async (req, res) => {
     try {
@@ -965,9 +969,9 @@ router.get('/:slug/progress', async (req, res) => {
 });
 
 /**
- * @route   POST /api/student/courses/:slug/review
- * @desc    Add or update a review for a course
- * @access  Private (Student)
+ * @route   POST /api/student/courses/:slug/review
+ * @desc    Add or update a review for a course
+ * @access  Private (Student)
  */
 router.post('/:slug/review', async (req, res) => {
     try {

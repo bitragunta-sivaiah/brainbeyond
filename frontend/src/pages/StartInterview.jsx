@@ -863,20 +863,20 @@ const SWEInterview = ({ onExitInterview }) => {
                 <nav>
                     <ul className="space-y-2">
                         {sections.map((section, index) => (
-                             <li key={section.id} className="relative">
+                             <li key={section.id} className=" ">
                                 <button
                                     onClick={() => activeSection !== 'interview' && setActiveSection(section.id)}
                                     className={`w-full text-left flex items-center p-3 rounded-lg transition-colors ${activeSection === section.id ? 'bg-accent text-accent-foreground font-bold' : 'hover:bg-muted'}`}
                                     disabled={activeSection === 'interview' || (index > currentSectionIndex && status !== 'succeeded')}
                                 >
-                                    <span className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 font-bold ${currentSectionIndex >= index ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                    <span className={`w-8 h-8 relative rounded-full flex items-center justify-center mr-4 font-bold ${currentSectionIndex >= index ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
                                         {currentSectionIndex > index ? <MdVerified  className="w-5 h-5"/> : index + 1}
                                     </span>
                                     {section.title}
                                 </button>
-                                {index < sections.length - 1 && (
-                                     <div className={`absolute left-[27px] z-0 h-full w-0.5 mt-1 ${currentSectionIndex > index ? 'bg-primary' : 'bg-border'}`} style={{ top: '24px' }} />
-                                )}
+                                {/* {index < sections.length - 1 && (
+                                     <div className={`absolute  left-[50%] z-0 h-full w-0.5 mt-1 ${currentSectionIndex > index ? 'bg-primary' : 'bg-border'}`} style={{ top: '24px' }} />
+                                )} */}
                              </li>
                         ))}
                     </ul>

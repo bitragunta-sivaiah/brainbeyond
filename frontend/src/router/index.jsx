@@ -15,6 +15,7 @@ import SettingsPage from "@/components/SettingsPage";
  
 import Subscription from "@/components/Subscription";
 import VerificationTokenCertificate from "@/components/VerificationTokenCertificate";
+import AdminDataHistory from "@/layout/AdminDataHistory";
 import StudentDashboard from "@/layout/StudentDashboard";
 import AdminContactManager from "@/pages/admin/AdminContactManager";
 import AdminInterviewQuestions from "@/pages/AdminInterviewQuestions";
@@ -177,6 +178,7 @@ export const router = createBrowserRouter([
                     { path: 'purchases', element: <AllOrderManager /> },
                     { path: 'contact', element: <AdminContactManager /> },
                     { path: 'interview-questions', element: <AdminInterviewQuestions /> },
+                    { path: 'history-access', element: <AdminDataHistory /> },
                 ],
             },
 

@@ -2,15 +2,36 @@ import express from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import Tesseract from 'tesseract.js';
+import { createCanvas } from 'canvas';
 import { protect } from '../middleware/authMiddleware.js';
 import ATSResumeChecker from '../models/atsResumeCheckerModel.js';
 
 // Initialize Express router
 const router = express.Router();
 
-// Configure Multer for in-memory storage
+// Configure Multer for in-memory storage with file filtering
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+            'image/jpeg',
+            'image/png'
+        ];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Unsupported file type. Please upload a PDF, DOCX, TXT, JPG, or PNG file.'), false);
+        }
+    }
+});
+
 
 // Configure Cloudinary (ensure environment variables are set)
 cloudinary.config({
@@ -19,22 +40,61 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Use the provided API URL and key
+// Use the provided API URL and key - UPDATED to the new model
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
 
-// Helper function to extract text from a DOCX file buffer
-const extractTextFromBuffer = async (buffer, mimetype) => {
-    try {
-        if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-            const result = await mammoth.extractRawText({ buffer: buffer });
-            return result.value;
-        } else {
-            throw new Error('Unsupported file type. Only DOCX are allowed with this configuration.');
-        }
-    } catch (error) {
-        console.error('Error extracting text:', error);
-        throw new Error('Failed to extract text from the resume file.');
+/**
+ * **Robust Text Extraction Helper**
+ * Extracts text from various file formats (PDF, DOCX, TXT, Images) using
+ * direct extraction and OCR fallbacks for maximum compatibility.
+ * @param {object} file - The file object from Multer.
+ * @returns {Promise<string>} The extracted plain text from the file.
+ */
+const extractTextFromFile = async (file) => {
+    switch (file.mimetype) {
+        case 'application/pdf':
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `pdfjs-dist/build/pdf.worker.mjs`;
+            const doc = await pdfjsLib.getDocument(new Uint8Array(file.buffer)).promise;
+            let fullText = '';
+
+            // First pass: Try standard text extraction
+            for (let i = 1; i <= doc.numPages; i++) {
+                const page = await doc.getPage(i);
+                const content = await page.getTextContent();
+                fullText += content.items.map(item => item.str).join(' ') + '\n';
+            }
+            if (fullText.trim()) return fullText;
+
+            // Fallback: If no text, use OCR on each page
+            console.warn('Standard PDF text extraction failed. Falling back to OCR...');
+            let ocrText = '';
+            for (let i = 1; i <= doc.numPages; i++) {
+                const page = await doc.getPage(i);
+                const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
+                const canvas = createCanvas(viewport.width, viewport.height);
+                const context = canvas.getContext('2d');
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                const { data: { text } } = await Tesseract.recognize(canvas.toBuffer('image/png'), 'eng');
+                ocrText += text + '\n';
+            }
+            if (!ocrText.trim()) throw new Error('OCR could not detect any text in the PDF.');
+            return ocrText;
+
+        case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            const { value } = await mammoth.extractRawText({ buffer: file.buffer });
+            return value;
+
+        case 'image/jpeg':
+        case 'image/png':
+            const { data: { text } } = await Tesseract.recognize(file.buffer, 'eng');
+            return text;
+
+        case 'text/plain':
+            return file.buffer.toString('utf-8');
+
+        default:
+            throw new Error('Unsupported file type for text extraction.');
     }
 };
 
@@ -52,17 +112,20 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
     try {
         // 2. Upload file to Cloudinary and get a URL
         const uploadResult = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream({ resource_type: 'raw' }, (error, res) => {
+            const uploadStream = cloudinary.uploader.upload_stream({ resource_type: 'raw' }, (error, result) => {
                 if (error) reject(error);
-                resolve(res);
+                resolve(result);
             });
             uploadStream.end(req.file.buffer);
         });
 
-        // 3. Extract plain text from the resume file
-        const resumeText = await extractTextFromBuffer(req.file.buffer, req.file.mimetype);
+        // 3. Extract plain text from the resume file (any supported format)
+        const resumeText = await extractTextFromFile(req.file);
 
-        // Define a comprehensive list of action words
+        if (!resumeText || !resumeText.trim()) {
+            throw new Error('Could not extract any readable text from the uploaded file.');
+        }
+
         const actionWords = [
             "Achieved", "Analyzed", "Authored", "Built", "Collaborated", "Coordinated", "Created", "Designed",
             "Developed", "Directed", "Engineered", "Enhanced", "Established", "Evaluated", "Executed",
@@ -74,7 +137,6 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
         ];
 
         // 4. Perform AI analysis using a direct fetch call to Gemini
-        // UPDATED PROMPT: Enhanced for 100% accuracy (as much as possible with LLMs) and specific action words
         const prompt = `You are an extremely critical and precise ATS (Applicant Tracking System) and a highly experienced career coach. Your primary goal is to provide a 100% accurate and actionable analysis of a resume against a given job description. Provide the response as a perfectly valid JSON object. Do not include any text, notes, or explanations outside of the JSON object itself. Do not use markdown backticks.
 
         Job Description:
@@ -124,20 +186,8 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
         try {
             analysisData = JSON.parse(responseText);
         } catch (parseError) {
-            console.error('Initial JSON parse failed. Raw text:', responseText);
-            // Attempt a more robust cleanup for common JSON issues from LLMs
-            const cleanedResponse = responseText
-                .replace(/,\s*([\]}])/g, '$1') // Remove trailing commas before ] or }
-                .replace(/([}\]])\s*(\s*)"/g, '$1,"') // Ensure comma between objects/arrays
-                .replace(/(\w+):/g, '"$1":') // Quote unquoted keys
-                .replace(/'/g, '"'); // Replace single quotes with double quotes
-
-            try {
-                analysisData = JSON.parse(cleanedResponse);
-            } catch (finalParseError) {
-                console.error('Final JSON parse failed:', finalParseError);
-                throw new Error('Failed to parse Gemini API response into a valid JSON object after multiple attempts.');
-            }
+            console.error('JSON parse failed. Raw text:', responseText);
+            throw new Error('Failed to parse the AI response. It may not be valid JSON.');
         }
 
         // 5. Save the analysis to your database
@@ -153,7 +203,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             jobDescriptionText,
             matchScore: analysisData.atsScore,
             keywordAnalysis: {
-                foundKeywords: analysisData.keywords.matched.map(kw => ({ keyword: kw, count: 1 })), // Assuming count of 1 for simplicity
+                foundKeywords: analysisData.keywords.matched.map(kw => ({ keyword: kw, count: 1 })), // Assuming count of 1
                 missingKeywords: analysisData.keywords.missing
             },
             suggestions: analysisData.improvements,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -26,6 +26,21 @@ import {
     addOrUpdateReview,
 } from '../store/redux/studentCourseSlice';
 
+// A utility function to load the Razorpay script
+const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => {
+            resolve(true);
+        };
+        script.onerror = () => {
+            resolve(false);
+        };
+        document.body.appendChild(script);
+    });
+};
+
 const CourseDetails = () => {
     const { slug } = useParams();
     const navigate = useNavigate();
@@ -37,11 +52,11 @@ const CourseDetails = () => {
     const { details: course, progress } = selectedCourse;
     const { user } = useSelector((state) => state.auth);
 
-    const [activeTab, setActiveTab] = useState('description');
     const [isAccordionOpen, setIsAccordionOpen] = useState({});
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [reviewData, setReviewData] = useState({ rating: 0, comment: '' });
     const [showVideo, setShowVideo] = useState(false);
+    const [isRazorpayLoaded, setIsRazorpayLoaded] = useState(false);
 
     useEffect(() => {
         if (slug) {
@@ -50,6 +65,13 @@ const CourseDetails = () => {
                 dispatch(fetchCourseProgress(slug));
             }
         }
+        loadRazorpayScript().then((res) => {
+            setIsRazorpayLoaded(res);
+            if (!res) {
+                toast.error('Razorpay script failed to load. Please check your network.');
+            }
+        });
+
         return () => {
             dispatch(resetSelectedCourse());
         };
@@ -67,9 +89,14 @@ const CourseDetails = () => {
             toast.error('Please log in to enroll in the course.');
             return navigate('/login');
         }
-        await dispatch(enrollFreeCourse(slug));
-        dispatch(fetchCourseDetails(slug));
-        dispatch(fetchCourseProgress(slug));
+        try {
+            await dispatch(enrollFreeCourse(slug)).unwrap();
+            toast.success('Successfully enrolled in the course!');
+            dispatch(fetchCourseDetails(slug));
+            dispatch(fetchCourseProgress(slug));
+        } catch (err) {
+            toast.error(err.message || 'Failed to enroll.');
+        }
     };
 
     const handleCreateOrder = async () => {
@@ -77,9 +104,13 @@ const CourseDetails = () => {
             toast.error('Please log in to purchase the course.');
             return navigate('/login');
         }
+        if (!isRazorpayLoaded) {
+            return toast.error('Payment gateway is not ready. Please try again in a moment.');
+        }
+
         try {
-            const resultAction = await dispatch(createCourseOrder(slug));
-            const order = resultAction.payload;
+            const resultAction = await dispatch(createCourseOrder(slug)).unwrap();
+            const order = resultAction;
 
             const options = {
                 key: order.key,
@@ -87,14 +118,19 @@ const CourseDetails = () => {
                 currency: order.currency,
                 order_id: order.id,
                 handler: async function (response) {
-                    const verificationData = {
-                        razorpay_order_id: response.razorpay_order_id,
-                        razorpay_payment_id: response.razorpay_payment_id,
-                        razorpay_signature: response.razorpay_signature,
-                    };
-                    await dispatch(verifyPayment(verificationData));
-                    dispatch(fetchCourseDetails(slug));
-                    dispatch(fetchCourseProgress(slug));
+                    try {
+                        const verificationData = {
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature,
+                        };
+                        await dispatch(verifyPayment(verificationData)).unwrap();
+                        toast.success('Payment successful! Course access granted.');
+                        dispatch(fetchCourseDetails(slug));
+                        dispatch(fetchCourseProgress(slug));
+                    } catch (err) {
+                        toast.error('Payment verification failed.');
+                    }
                 },
                 modal: {
                     ondismiss: () => {
@@ -102,7 +138,7 @@ const CourseDetails = () => {
                     },
                 },
                 prefill: {
-                    name: user.profileInfo.firstName + ' ' + user.profileInfo.lastName,
+                    name: user.profileInfo?.firstName + ' ' + user.profileInfo?.lastName,
                     email: user.email,
                 },
             };
@@ -110,7 +146,7 @@ const CourseDetails = () => {
             const rzp = new window.Razorpay(options);
             rzp.open();
         } catch (err) {
-            console.error('Failed to create Razorpay order:', err);
+            toast.error(err.message || 'Failed to create Razorpay order.');
         }
     };
 
@@ -119,19 +155,28 @@ const CourseDetails = () => {
         if (reviewData.rating === 0) {
             return toast.error('Please provide a star rating.');
         }
-        await dispatch(addOrUpdateReview({ slug, ...reviewData }));
-        setShowReviewForm(false);
-        setReviewData({ rating: 0, comment: '' });
-        dispatch(fetchCourseDetails(slug));
+        try {
+            await dispatch(addOrUpdateReview({ slug, ...reviewData })).unwrap();
+            toast.success('Review submitted successfully!');
+            setShowReviewForm(false);
+            setReviewData({ rating: 0, comment: '' });
+            dispatch(fetchCourseDetails(slug));
+        } catch (err) {
+            toast.error(err.message || 'Failed to submit review.');
+        }
     };
 
     const renderEnrollmentButton = () => {
         if (detailsStatus === 'loading' || actionStatus === 'loading' || paymentStatus === 'loading') {
             return (
                 <button
-                    className="bg-primary-foreground text-primary rounded-xl px-6 py-3 font-semibold w-full"
+                    className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold w-full flex items-center justify-center gap-2"
                     disabled
                 >
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
                     Processing...
                 </button>
             );
@@ -176,8 +221,9 @@ const CourseDetails = () => {
             <button
                 onClick={handleCreateOrder}
                 className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold w-full hover:bg-primary/90 transition-colors"
+                disabled={!isRazorpayLoaded}
             >
-                Buy Now for ₹{price.toFixed(2)}
+                {isRazorpayLoaded ? `Buy Now for ₹${price.toFixed(2)}` : 'Loading Payment...'}
             </button>
         );
     };
@@ -370,20 +416,21 @@ const CourseDetails = () => {
     );
 
     return (
-        <div className=" w-full max-w-7xl mx-auto px-3 py-8 sm:px-6 lg:px-8 font-body">
+        <div className="w-full max-w-7xl mx-auto px-3 py-8 sm:px-6 lg:px-8 font-body">
             {/* Course Header */}
             <section
                 className="relative h-fit rounded-xl overflow-hidden shadow mb-8 bg-cover bg-center"
-
             >
-                <div className="absolute w-full h-full     z-0  blur-xs   " >
-                    <img src={course.thumbnail} className='w-full h-full object-cover opacity-100' alt="" />
-                </div>
+                <div className="absolute w-full h-full z-0 blur-sm" style={{ backgroundImage: `url(${course.thumbnail})`, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
                 <div className="bg-black/70 absolute z-10 w-full h-full"></div>
                 <div className="relative z-10 h-full flex flex-col justify-end p-6 md:p-10 text-primary-foreground">
-                    <div className="flex items-center gap-2 font-bold mb-2  ">
-                        <p className="text-sm uppercase tracking-wide text-background bg-primary px-4 py-2 pl-7   rounded-br-sm absolute -left-3 top-0">{course.category}</p>
-                        <span className="text-sm capitalize  rounded-[50%]  rotate-6 -top-1   flex items-center justify-center absolute text-background bg-primary px-4 py-2 pr-7  -right-3  ">{course.level}</span>
+                    <div className="flex items-center gap-2 font-bold mb-2">
+                        <p className="text-sm uppercase tracking-wide text-background bg-primary px-4 py-2 rounded-br-sm absolute -left-3 top-0">
+                            {course.category}
+                        </p>
+                        <span className="text-sm capitalize rounded-full rotate-6 -top-1 absolute flex items-center justify-center text-background bg-primary px-4 py-2 -right-3">
+                            {course.level}
+                        </span>
                     </div>
                     <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight mb-4 font-heading">
                         {course.title}
@@ -404,10 +451,10 @@ const CourseDetails = () => {
                                 <span className="font-medium">Created by:</span>
                                 <img
                                     src={course.instructors[0].avatar}
-                                    alt={course.instructors[0].fullName}
+                                    alt={course.instructors[0].username}
                                     className="w-8 h-8 rounded-full border-2 border-yellow-400 object-cover"
                                 />
-                                <span className="font-medium">{course.instructors[0].fullName}</span>
+                                <span className="font-medium">{course.instructors[0].username}</span>
                                 <MdVerified className="text-yellow-400 text-lg" />
                             </div>
                         )}
@@ -428,9 +475,7 @@ const CourseDetails = () => {
                         <div className="bg-card rounded-3xl shadow p-6 flex flex-col">
                             {/* Video Preview Section */}
                             <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-md mb-6">
-                                {/* This will display the video preview image */}
                                 <img src={course.thumbnail} alt="Course Preview" className="w-full h-full object-cover" />
-                                {/* Overlay play button */}
                                 <button
                                     onClick={() => setShowVideo(true)}
                                     className="absolute inset-0 flex items-center justify-center bg-black/50 hover:bg-black/60 transition-colors"
@@ -461,7 +506,7 @@ const CourseDetails = () => {
                                 </li>
                                 <li className="flex justify-between items-center text-foreground border-b pb-2 border-border">
                                     <span className="text-custom">Duration</span>
-                                    <span className="font-semibold">{course.duration} hours</span>
+                                    <span className="font-semibold">{course.duration ? `${course.duration} hours` : 'N/A'}</span>
                                 </li>
                                 <li className="flex justify-between items-center text-foreground">
                                     <span className="text-custom">Language</span>
@@ -506,3 +551,5 @@ const CourseDetails = () => {
 };
 
 export default CourseDetails;
+
+ 
