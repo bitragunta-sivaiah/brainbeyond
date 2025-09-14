@@ -55,6 +55,8 @@ const CreatePrepModal = ({ isOpen, onClose, onSubmit }) => {
             targetDate: formData.targetDate,
         };
         onSubmit(submissionData);
+        // Reset form after submission
+        setFormData({ title: '', company: '', role: '', targetDate: '' });
     };
 
     return (
@@ -77,7 +79,7 @@ const CreatePrepModal = ({ isOpen, onClose, onSubmit }) => {
                     >
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-2xl font-heading text-foreground">Create New Prep Plan</h2>
-                            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transitions">
+                            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
                                 <X size={24} />
                             </button>
                         </div>
@@ -130,7 +132,7 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, children }) => (
                         <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="button" onClick={onClose} className="px-6 py-2 rounded-md bg-secondary text-secondary-foreground font-semibold">
                             Cancel
                         </motion.button>
-                        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="button" onClick={onConfirm} className="px-6 py-2 rounded-md bg-red-600 text-white font-semibold shadow-shadow">
+                        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="button" onClick={onConfirm} className="px-6 py-2 rounded-md bg-destructive text-destructive-foreground font-semibold shadow-shadow">
                             Delete
                         </motion.button>
                     </div>
@@ -143,8 +145,6 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, children }) => (
 
 // Card component for displaying a single preparation plan
 const PreparationCard = ({ preparation, onDelete }) => {
-    // Note: The backend provides a `daysRemaining` virtual property.
-    // This frontend calculation is kept as a robust fallback and for immediate UI feedback.
     const daysRemaining = () => {
         if (!preparation.targetDate) return null;
         const today = new Date();
@@ -186,14 +186,14 @@ const PreparationCard = ({ preparation, onDelete }) => {
                         <span className={`font-semibold ${remaining.color}`}>{remaining.text}</span>
                     </div>
                 ) : <div></div>}
-                <Link to={`/interview-prep/${preparation._id}`} className="text-sm text-primary hover:underline font-medium">
+                <Link to={`/interview-prep/${preparation._id}`} className="text-sm text-primary hover:text-accent-foreground hover:underline font-medium transition-colors">
                     Get Details
                 </Link>
                 <motion.button
-                    whileHover={{ scale: 1.1, color: '#ef4444' /* red-500 */ }}
+                    whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={() => onDelete(preparation._id)}
-                    className="text-muted-foreground transitions"
+                    className="text-muted-foreground hover:text-destructive transition-colors"
                 >
                     <Trash2 size={20} />
                 </motion.button>

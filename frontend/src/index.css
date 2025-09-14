@@ -2,21 +2,21 @@
 @import "tailwindcss";
 
 :root {
-  /* LMS e-learning Palette - Light Mode */
-  --color-background: #fbfbfe;
-  --color-60-primary: #0056d2;
-  --color-30-secondary: #dedcff;
-  --color-10-accent: #433bff;
-  --text-color: #050315;
-  --text-custom: #a8a8a8;
+  /* Modern Botanical Palette - Light Mode */
+  --color-background: #fcfcfb;    /* Clean Off-White */
+  --color-60-primary: #1379ff;    /* Deep Forest Green */
+  --color-30-secondary: #e9f5db; /* Light Leaf Green */
+  --color-10-accent: #d4a373;     /* Muted Ochre/Gold */
+  --text-color: #1c251e;          /* Dark Green/Charcoal */
+  --text-custom: #707973;         /* Muted Green-Gray */
 
   /* Tailwind Color Mapping - Light Mode */
   --background: var(--color-background);
   --foreground: var(--text-color);
   --card: #ffffff;
-  --card-foreground: #212529;
+  --card-foreground: var(--text-color);
   --popover: #ffffff;
-  --popover-foreground: #212529;
+  --popover-foreground: var(--text-color);
   --primary: var(--color-60-primary);
   --primary-foreground: #ffffff;
   --secondary: #e9ecef;
@@ -25,7 +25,7 @@
   --muted-foreground: #6c757d;
   --accent: var(--color-30-secondary);
   --accent-foreground: var(--color-10-accent);
-  --destructive: #bc0013;
+  --destructive: #d90429;
   --destructive-foreground: #ffffff;
   --border: #dee2e6;
   --input: #f8f9fa;
@@ -48,30 +48,30 @@
 }
 
 .dark {
-  /* LMS e-learning Palette - Dark Mode */
-  --color-background: #010104;
-  --color-60-primary: #42be03;
-  --color-30-secondary: #c1ff8f;
-  --color-10-accent: #22a900;
-  --text-color: #ebe9fc;
-  --text-custom: #a8a8a8;
+  /* Deep Space Palette - Dark Mode (Unchanged) */
+  --color-background: #0d1117;    /* Dark Slate Blue */
+  --color-60-primary: #8b5cf6;    /* Vibrant Violet */
+  --color-30-secondary: #37304f; /* Dusty Lavender */
+  --color-10-accent: #2dd4bf;     /* Bright Aqua */
+  --text-color: #e6edf3;          /* Light Gray */
+  --text-custom: #8b949e;         /* Medium Gray */
 
   /* Tailwind Color Mapping - Dark Mode */
   --background: var(--color-background);
   --foreground: var(--text-color);
-  --card: #151414;
+  --card: #161b22;
   --card-foreground: var(--text-color);
   --popover: #242424;
   --popover-foreground: var(--text-color);
   --primary: var(--color-60-primary);
   --primary-foreground: #ffffff;
-  --secondary: #343a40;
+  --secondary: #21262d;
   --secondary-foreground: #adb5bd;
-  --muted: #212529;
+  --muted: #30363d;
   --muted-foreground: #868e96;
   --accent: var(--color-30-secondary);
   --accent-foreground: var(--color-10-accent);
-  --destructive: #fc0000;
+  --destructive: #f85149;
   --destructive-foreground: #ffffff;
   --border: #343a40;
   --input: #1e1e1e;
@@ -143,11 +143,12 @@ body {
 
 h1,h2,h3,h4,h5,h6 {
   font-family: var(--font-heading);
-
 }
+
 h3{
   font-weight: 700;
 }
+
 /* This is the best use for the display font */
 h1 {
   font-family: var(--font-display);
@@ -186,9 +187,9 @@ p,span,div,li {
     transform: translateX(-50%);
   }
 }
+
 *::-webkit-scrollbar{
   display: none;
- 
 }
 
 .custom-scrollbar {
@@ -214,11 +215,10 @@ p,span,div,li {
   border-radius: var(--radius-md);
   border: 2px solid var(--muted);
   behavior: smooth;
-
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: var(--primary-foreground);
+  background-color: var(--accent-foreground);
 }
 
 @keyframes bell-ring {
@@ -235,4 +235,3 @@ p,span,div,li {
   animation: bell-ring 2s ease-in-out infinite;
   transform-origin: 50% 0%;
 }
- 

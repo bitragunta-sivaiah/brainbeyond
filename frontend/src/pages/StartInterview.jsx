@@ -19,9 +19,10 @@ import {
 // --- ICONS ---
 import {
     ChevronRight, Lightbulb, CheckCircle, Mic, Volume2, Pause, Play,
-    Repeat, Shield, Lock, Wifi, Captions, Settings, PhoneOff, Bot, User, BrainCircuit, BarChart, Trophy, FileUp, Loader2, X,Clock ,HelpCircle 
+    Repeat, Shield, Lock, Wifi, Captions, Settings, PhoneOff, Bot, User, BrainCircuit, BarChart, Trophy, FileUp, Loader2, X, Clock, HelpCircle, VideoOff
 } from 'lucide-react';
 import { FaClipboardList } from 'react-icons/fa';
+import { MdVerified } from 'react-icons/md';
 
 // --- CONFIGURATION & CONSTANTS ---
 const INTERVIEW_DURATION_SECONDS = 1200; // 20 minutes
@@ -53,7 +54,7 @@ const SectionCard = ({ icon, title, children, className = "" }) => (
 
 const Loader = ({ text }) => (
     <div className="flex flex-col items-center justify-center p-8 text-center h-full">
-        <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
+        <Loader className="w-12 h-12 text-primary animate-spin mb-4" />
         <p className="text-muted-foreground font-semibold">{text}</p>
     </div>
 );
@@ -67,7 +68,7 @@ const Tooltip = ({ text, children }) => (
     </div>
 );
 
-// Custom hook for microphone testing logic, making it reusable.
+// Custom hook for microphone testing logic
 const useMicTest = () => {
     const [micVolume, setMicVolume] = useState(0);
     const [isTestingMic, setIsTestingMic] = useState(false);
@@ -79,7 +80,7 @@ const useMicTest = () => {
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(track => track.stop());
         if (audioContextRef.current?.state !== "closed") audioContextRef.current?.close();
-        
+
         animationFrameIdRef.current = null;
         mediaStreamRef.current = null;
         audioContextRef.current = null;
@@ -119,16 +120,23 @@ const useMicTest = () => {
     return { micVolume, isTestingMic, startMicTest, stopMicTest };
 };
 
-// New dynamic indicator for when the user is speaking.
+// NEW: More professional SpeakingIndicator
 const SpeakingIndicator = () => (
-    <div className="flex items-end gap-0.5 h-4">
-        <motion.div animate={{ scaleY: [1, 1.5, 1] }} transition={{ duration: 0.4, repeat: Infinity }} className="w-1 bg-white rounded-full" />
-        <motion.div animate={{ scaleY: [1, 2.5, 1] }} transition={{ duration: 0.5, repeat: Infinity, delay: 0.2 }} className="w-1 bg-white rounded-full" />
-        <motion.div animate={{ scaleY: [1, 1.8, 1] }} transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }} className="w-1 bg-white rounded-full" />
-    </div>
+    <motion.div
+        className="absolute inset-0 rounded-lg border-2 border-primary pointer-events-none"
+        animate={{
+            scale: [1, 1.05, 1],
+            opacity: [0, 0.8, 0],
+        }}
+        transition={{
+            duration: 1.5,
+            ease: "easeInOut",
+            repeat: Infinity,
+        }}
+    />
 );
 
-// New modal for in-interview settings.
+
 const SettingsModal = ({ isOpen, onClose, micVolume, isTestingMic, onToggleMicTest, onPlaySound }) => {
     if (!isOpen) return null;
 
@@ -156,7 +164,7 @@ const SettingsModal = ({ isOpen, onClose, micVolume, isTestingMic, onToggleMicTe
                         <p className="text-sm text-muted-foreground">The interview is paused. Test your devices below.</p>
                         <div className="space-y-2">
                              <button onClick={onToggleMicTest} className={`w-full flex items-center justify-center gap-2 py-2 rounded-md transition ${isTestingMic ? 'bg-destructive/80' : 'bg-secondary'} text-secondary-foreground`}>
-                                <Mic className="w-5 h-5" /> {isTestingMic ? 'Stop Test' : 'Test Mic'}
+                                 <Mic className="w-5 h-5" /> {isTestingMic ? 'Stop Test' : 'Test Mic'}
                             </button>
                             <div className="w-full bg-input h-2 rounded-full overflow-hidden">
                                 <motion.div className="bg-primary h-full" animate={{ width: `${micVolume}%` }} transition={{ duration: 0.1 }} />
@@ -215,6 +223,8 @@ const IntroSection = ({ onNext }) => (
 const SetupSection = ({ preparationId, onStart, status }) => {
     const dispatch = useDispatch();
     const { micVolume, isTestingMic, startMicTest, stopMicTest } = useMicTest();
+    // NEW: State to track camera permissions
+    const [isCameraReady, setIsCameraReady] = useState(false);
 
     const [interviewConfig, setInterviewConfig] = useState({
         type: 'behavioral',
@@ -251,17 +261,23 @@ const SetupSection = ({ preparationId, onStart, status }) => {
 
     const handleStart = () => {
         stopMicTest();
+        // NEW: Enforce camera access before starting
+        if (!isCameraReady) {
+            toast.error("Please enable your camera to start the interview.");
+            return;
+        }
         if (interviewConfig.type === 'resume-based' && !interviewConfig.resumeUrl) {
             toast.error("Please upload a resume for this interview type.");
             return;
         }
         onStart(interviewConfig);
     };
-
+    
+    // NEW: Added warning about closing other apps for a better experience.
     const sideInfo = [
         { icon: Clock, title: "Expect to spend ~20 minutes", desc: "This simulates a typical first-round technical screen." },
+        { icon: Wifi, title: "Ensure a Stable Environment", desc: "For best results, close other applications and ensure a stable internet connection." },
         { icon: HelpCircle, title: "Need assistance? Just ask", desc: "During the interview, you can ask the AI to repeat or clarify a question." },
-        { icon: Repeat, title: "Practice as many times as you need", desc: "Each attempt helps you improve and gain confidence." },
         { icon: Shield, title: "Your data is in your control", desc: "Your interview recording and feedback are private." },
     ];
 
@@ -304,8 +320,22 @@ const SetupSection = ({ preparationId, onStart, status }) => {
                     </div>
                 </SectionCard>
 
-                <div className="aspect-video bg-black rounded-lg overflow-hidden border border-border shadow-lg">
-                    <Webcam audio={false} className="w-full h-full object-cover" mirrored={true} />
+                {/* NEW: Webcam status overlay */}
+                <div className="aspect-video bg-black rounded-lg overflow-hidden border border-border shadow-lg relative flex items-center justify-center">
+                    <Webcam
+                        audio={false}
+                        className="w-full h-full object-cover"
+                        mirrored={true}
+                        onUserMedia={() => setIsCameraReady(true)}
+                        onUserMediaError={() => setIsCameraReady(false)}
+                    />
+                    {!isCameraReady && (
+                        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white p-4">
+                            <VideoOff className="w-12 h-12 mb-4" />
+                            <h3 className="font-bold text-lg">Camera Access Required</h3>
+                            <p className="text-center text-sm text-muted-foreground">Please grant camera permissions in your browser to proceed.</p>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-card border border-border p-4 rounded-lg space-y-4">
@@ -329,7 +359,7 @@ const SetupSection = ({ preparationId, onStart, status }) => {
 
             <div className="w-full lg:w-1/3 space-y-4 pt-0 lg:pt-16">
                  <div className="bg-card border border-border p-6 rounded-lg shadow-md space-y-5">
-                    <h3 className="font-heading font-bold text-lg">Things to know</h3>
+                    <h3 className="font-heading font-bold text-lg">Things to Know</h3>
                     {sideInfo.map((item, i) => (
                         <div key={i} className="flex items-start gap-4">
                             <item.icon className="w-6 h-6 text-primary mt-1 shrink-0" />
@@ -342,7 +372,8 @@ const SetupSection = ({ preparationId, onStart, status }) => {
                 </div>
                 <button
                     onClick={handleStart}
-                    disabled={status === 'loading'}
+                    // FIX: Button is disabled if camera is not ready
+                    disabled={status === 'loading' || !isCameraReady}
                     className="w-full bg-primary text-primary-foreground font-bold py-4 text-lg rounded-lg shadow-lg hover:bg-primary/90 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                     {status === 'loading' ? <Loader2 className="animate-spin" /> : 'Start Now'}
@@ -352,13 +383,15 @@ const SetupSection = ({ preparationId, onStart, status }) => {
     );
 };
 
-const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
+
+const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewConfig }) => {
     const { user } = useSelector(state => state.auth || {});
     const [timeLeft, setTimeLeft] = useState(INTERVIEW_DURATION_SECONDS);
     const [transcript, setTranscript] = useState([{ speaker: 'ai', content: initialQuestion, timestamp: new Date() }]);
     const [aiStatus, setAiStatus] = useState(AI_STATUS.IDLE);
     const hasSpokenInitialQuestion = useRef(false);
     const transcriptEndRef = useRef(null);
+    const isEndingRef = useRef(false); // NEW: Prevent multiple end calls
 
     const [isPaused, setIsPaused] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -374,7 +407,7 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
 
             utterance.onend = () => {
                 setAiStatus(AI_STATUS.LISTENING);
-                if (browserSupportsSpeechRecognition) {
+                if (browserSupportsSpeechRecognition && !isPaused) {
                     SpeechRecognition.startListening({ continuous: false });
                 }
             };
@@ -391,7 +424,7 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
         } else {
             speakNow();
         }
-    }, [browserSupportsSpeechRecognition]);
+    }, [browserSupportsSpeechRecognition, isPaused]);
 
     const pauseInterview = useCallback(() => {
         setIsPaused(true);
@@ -404,13 +437,17 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
         setIsPaused(false);
         stopMicTest();
         const lastQuestion = transcript.filter(t => t.speaker === 'ai').pop()?.content;
-        if(lastQuestion) {
+        if (lastQuestion) {
             toast("Resuming interview...", { icon: '▶️' });
             speak(`Let's continue. The last question was: ${lastQuestion}`);
         }
     }, [transcript, speak, stopMicTest]);
-    
+
     const handleEndInterview = useCallback(async () => {
+        // NEW: Check ref to ensure this only runs once
+        if (isEndingRef.current) return;
+        isEndingRef.current = true;
+
         setIsPaused(true);
         setAiStatus(AI_STATUS.IDLE);
         SpeechRecognition.stopListening();
@@ -421,6 +458,22 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
             : transcript;
         await onEnd({ finalTranscript: finalTranscriptPayload });
     }, [transcript, onEnd, finalTranscript, interimTranscript]);
+    
+    // NEW: Effect to auto-end interview on tab switch
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                toast.error("Tab switch detected. Ending interview.", { duration: 4000 });
+                handleEndInterview();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [handleEndInterview]);
 
     useEffect(() => {
         transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -436,17 +489,16 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
         const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
         return () => clearInterval(timer);
     }, [timeLeft, handleEndInterview, isPaused]);
-    
+
     useEffect(() => {
         if (!finalTranscript || isPaused) return;
-
         setAiStatus(AI_STATUS.THINKING);
         const userEntry = { speaker: 'user', content: finalTranscript, timestamp: new Date() };
         const newTranscriptForApi = [...transcript, userEntry];
-        
+
         setTranscript(newTranscriptForApi);
         resetTranscript();
-        
+
         onNextQuestion({ transcript: newTranscriptForApi })
             .then(nextQuestion => {
                 if (nextQuestion) {
@@ -461,8 +513,7 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
                 toast.error("An AI error occurred. Ending interview.");
                 handleEndInterview();
             });
-            
-    }, [finalTranscript, isPaused]);
+    }, [finalTranscript, isPaused, transcript, resetTranscript, onNextQuestion, speak, handleEndInterview]);
 
     useEffect(() => {
         if (!browserSupportsSpeechRecognition) {
@@ -479,6 +530,13 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
         const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
         const secs = (seconds % 60).toString().padStart(2, '0');
         return `${mins}:${secs}`;
+    };
+
+    // NEW: Helper to format the interview title dynamically
+    const formatTitle = (config) => {
+        if (!config) return 'SWE Interview';
+        const type = config.type.replace('-', ' ');
+        return `${config.difficulty} ${type} Interview`.replace(/\b\w/g, l => l.toUpperCase());
     };
 
     return (
@@ -517,13 +575,14 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
                 </div>
             </div>
 
-            <div className="fixed bottom-4 right-4 w-[150px] h-[112px] md:w-[240px] md:h-[180px] rounded-lg overflow-hidden border-2 border-primary shadow-2xl group z-10">
+            <div className="fixed bottom-24 right-4 w-[150px] h-[112px] md:w-[340px] md:h-[280px] rounded-lg overflow-hidden border-2 border-primary shadow-2xl group z-10">
                 <Webcam audio={false} className="w-full h-full object-cover" mirrored={true} />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"/>
                 <div className="absolute bottom-2 left-2 flex items-center gap-2">
                     <p className="text-white text-xs md:text-sm font-bold drop-shadow-lg">{user?.username || 'You'}</p>
-                    {listening && <SpeakingIndicator />}
                 </div>
+                {/* FIX: Using new, more visible speaking indicator */}
+                {listening && <SpeakingIndicator />}
             </div>
             {interimTranscript && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="absolute bottom-6 left-1/2 -translate-x-1/2 max-w-2xl w-full z-20">
@@ -534,10 +593,12 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion }) => {
             <div className="flex-shrink-0 bg-background pt-3">
                 <div className="flex items-center justify-between p-2 md:p-3 bg-card border border-border rounded-lg">
                     <div className="hidden md:flex items-center gap-4">
-                        <span className="font-heading font-bold text-lg">SWE Interview</span>
+                        {/* FIX: Dynamic interview title */}
+                        <span className="font-heading font-bold text-lg">{formatTitle(interviewConfig)}</span>
                         <div className="w-px h-6 bg-border" />
+                        {/* FIX: Shows remaining and total time */}
                         <span className="font-mono text-lg flex items-center gap-2">
-                            {isPaused ? <Pause className="text-primary"/> : formatTime(timeLeft)}
+                            {isPaused ? <Pause className="text-primary"/> : `${formatTime(timeLeft)} / ${formatTime(INTERVIEW_DURATION_SECONDS)}`}
                         </span>
                     </div>
                     <div className="flex items-center gap-2 md:gap-4 mx-auto">
@@ -617,7 +678,6 @@ const FeedbackSection = ({ onRestart, status }) => {
     };
 
     const SuggestedAnswer = ({ answer }) => {
-        // This regex is more robust for splitting the suggested answer into sections.
         const sections = answer.split(/\n\n\d+\.\s*\*\*/);
         return (
             <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground">
@@ -685,10 +745,10 @@ const FeedbackSection = ({ onRestart, status }) => {
 
                 {aiFeedback.suggestedAnswers && aiFeedback.suggestedAnswers.length > 0 && (
                  <div className="md:col-span-3">
-                     <SectionCard icon={<CheckCircle className="w-6 h-6 text-green-500" />} title="Example of a Strong Answer">
-                         <h4 className="font-semibold text-card-foreground mb-4">For the question: <span className="italic">"{aiFeedback.suggestedAnswers[0].question}"</span></h4>
-                         <SuggestedAnswer answer={aiFeedback.suggestedAnswers[0].suggestedAnswer} />
-                     </SectionCard>
+                      <SectionCard icon={<CheckCircle className="w-6 h-6 text-green-500" />} title="Example of a Strong Answer">
+                        <h4 className="font-semibold text-card-foreground mb-4">For the question: <span className="italic">"{aiFeedback.suggestedAnswers[0].question}"</span></h4>
+                        <SuggestedAnswer answer={aiFeedback.suggestedAnswers[0].suggestedAnswer} />
+                      </SectionCard>
                  </div>
                 )}
             </div>
@@ -712,9 +772,11 @@ const SWEInterview = ({ onExitInterview }) => {
     const { status } = useSelector(state => state.interview);
 
     const [activeSection, setActiveSection] = useState('intro');
+    // FIX: Added interviewConfig to state to pass it down
     const [interviewSession, setInterviewSession] = useState({
         mockInterviewId: null,
         firstQuestion: '',
+        interviewConfig: null,
     });
 
     const sections = [
@@ -731,6 +793,7 @@ const SWEInterview = ({ onExitInterview }) => {
             setInterviewSession({
                 mockInterviewId: result.mockInterviewId,
                 firstQuestion: result.firstQuestion,
+                interviewConfig: interviewData, // Store config
             });
             setActiveSection('interview');
         } catch (error) {
@@ -775,19 +838,20 @@ const SWEInterview = ({ onExitInterview }) => {
                     initialQuestion={interviewSession.firstQuestion}
                     onEnd={handleEndInterview}
                     onNextQuestion={handleNextQuestion}
+                    interviewConfig={interviewSession.interviewConfig} // Pass config
                 />;
             default:
                 return <IntroSection onNext={() => setActiveSection('setup')} />;
         }
     };
-    
+
     if (activeSection === 'interview') {
         return renderActiveSection();
     }
 
     return (
-        <div className="min-h-screen bg-background text-foreground flex font-body">
-            <aside className="w-64 bg-card border-r border-border p-8 hidden lg:flex flex-col">
+        <div className="  flex-wrap  bg-background text-foreground flex font-body">
+            <aside className="w-full max-w-sm bg-card border-r border-border p-8 hidden lg:flex flex-col">
                 <div className="flex items-center justify-between mb-12">
                     <h1 className="font-display text-2xl text-primary">AI Mock Interview</h1>
                     <Tooltip text="Exit">
@@ -806,24 +870,24 @@ const SWEInterview = ({ onExitInterview }) => {
                                     disabled={activeSection === 'interview' || (index > currentSectionIndex && status !== 'succeeded')}
                                 >
                                     <span className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 font-bold ${currentSectionIndex >= index ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                                        {currentSectionIndex > index ? <CheckCircle className="w-5 h-5"/> : index + 1}
+                                        {currentSectionIndex > index ? <MdVerified  className="w-5 h-5"/> : index + 1}
                                     </span>
                                     {section.title}
                                 </button>
                                 {index < sections.length - 1 && (
-                                     <div className={`absolute left-[15px] h-full w-0.5 mt-1 ${currentSectionIndex > index ? 'bg-primary' : 'bg-border'}`} style={{ top: '24px' }} />
+                                     <div className={`absolute left-[27px] z-0 h-full w-0.5 mt-1 ${currentSectionIndex > index ? 'bg-primary' : 'bg-border'}`} style={{ top: '24px' }} />
                                 )}
-                            </li>
+                             </li>
                         ))}
                     </ul>
                 </nav>
             </aside>
             <main className="w-full lg:flex-1 overflow-y-auto custom-scrollbar">
-                  <AnimatePresence mode="wait">
+                 <AnimatePresence mode="wait">
                       <div key={activeSection}>
                           {renderActiveSection()}
                       </div>
-                  </AnimatePresence>
+                 </AnimatePresence>
             </main>
         </div>
     );
