@@ -4,25 +4,25 @@ import validator from 'validator';
 // --- SUB-SCHEMA DEFINITIONS ---
 // These sub-schemas are well-structured and remain unchanged.
 const addressSchema = new mongoose.Schema({
-    street: { type: String, trim: true, maxlength: 200 },
-    city: { type: String, trim: true, maxlength: 100 },
-    state: { type: String, trim: true, maxlength: 100 },
-    zipCode: { type: String, trim: true, maxlength: 20 },
-    country: { type: String, trim: true, maxlength: 100 }
+    street: { type: String, trim: true,  },
+    city: { type: String, trim: true,  },
+    state: { type: String, trim: true,  },
+    zipCode: { type: String, trim: true, },
+    country: { type: String, trim: true,  }
 }, { _id: false });
 
 const socialLinkSchema = new mongoose.Schema({
-    platform: { type: String,  trim: true, maxlength: 50 },
+    platform: { type: String,  trim: true,  },
     url: { type: String, trim: true, validate: { validator: (v) => v ? validator.isURL(v) : true, message: 'Please enter a valid URL' } }
 }, { _id: false });
 
 const namedLinkSchema = new mongoose.Schema({
-    name: { type: String,  trim: true, maxlength: 50 },
+    name: { type: String,  trim: true,  },
     url: { type: String,  trim: true, validate: { validator: (v) => v ? validator.isURL(v) : true, message: 'Please enter a valid URL' } }
 }, { _id: false });
 
 const gpaSchema = new mongoose.Schema({
-    value: { type: String,  trim: true, maxlength: 20 },
+    value: { type: String,  trim: true, },
     type: {
         type: String,
         enum: ['GPA', 'CGPA', 'Percentage', 'Marks'],
@@ -31,28 +31,28 @@ const gpaSchema = new mongoose.Schema({
 }, { _id: false });
 
 const certificationSchema = new mongoose.Schema({
-    name: { type: String, trim: true, maxlength: 150 },
-    issuingOrganization: { type: String, trim: true, maxlength: 150 },
+    name: { type: String, trim: true, },
+    issuingOrganization: { type: String, trim: true, },
     issueDate: { type: Date },
     credentialUrl: { type: String, trim: true, validate: { validator: (v) => v ? validator.isURL(v) : true, message: 'Please enter a valid URL' } }
 });
 
 const achievementSchema = new mongoose.Schema({
-    title: { type: String, trim: true, maxlength: 200 },
-    issuer: { type: String, trim: true, maxlength: 150 },
+    title: { type: String, trim: true,  },
+    issuer: { type: String, trim: true, },
     date: { type: Date },
-    description: { type: String, trim: true, maxlength: 1000 }
+    description: { type: String, trim: true,  }
 });
 
 const customSectionSchema = new mongoose.Schema({
-    sectionTitle: { type: String, trim: true, maxlength: 100 },
+    sectionTitle: { type: String, trim: true,  },
     items: [{
         _id: false,
-        title: { type: String, trim: true, maxlength: 200 },
-        subTitle: { type: String, trim: true, maxlength: 200 },
+        title: { type: String, trim: true,  },
+        subTitle: { type: String, trim: true,  },
         startDate: { type: Date },
         endDate: { type: Date },
-        description: [{ type: String, trim: true, maxlength: 500 }],
+        description: [{ type: String, trim: true, }],
         links: [namedLinkSchema]
     }]
 });
@@ -69,13 +69,13 @@ const resumeSchema = new mongoose.Schema({
         type: String,
         // REMOVED: `required` flag to allow AI to generate or use a default.
         trim: true,
-        maxlength: 200
+      
     },
     slug: { type: String, unique: true, trim: true },
     contact: {
-        firstName: { type: String,  trim: true, maxlength: 50 },
-        lastName: { type: String,  trim: true, maxlength: 50 },
-        professionalTitle: { type: String, trim: true, maxlength: 100 },
+        firstName: { type: String,  trim: true,  },
+        lastName: { type: String,  trim: true,  },
+        professionalTitle: { type: String, trim: true,  },
         email: {
             type: String,
             trim: true,
@@ -107,9 +107,9 @@ const resumeSchema = new mongoose.Schema({
     }],
     education: [{
         _id: false,
-        institution: { type: String,  trim: true, maxlength: 150 },
-        degree: { type: String,  trim: true, maxlength: 150 },
-        fieldOfStudy: { type: String, trim: true, maxlength: 150 },
+        institution: { type: String,  trim: true, },
+        degree: { type: String,  trim: true, },
+        fieldOfStudy: { type: String, trim: true, },
         startDate: { type: Date },
         endDate: { type: Date },
         isCurrent: { type: Boolean, default: false },
@@ -117,15 +117,15 @@ const resumeSchema = new mongoose.Schema({
     }],
     projects: [{
         _id: false,
-        name: { type: String,  trim: true, maxlength: 150 },
-        description: [{ type: String, trim: true, maxlength: 500 }],
-        technologiesUsed: [{ type: String, trim: true, maxlength: 50 }],
+        name: { type: String,  trim: true, },
+        description: [{ type: String, trim: true,  }],
+        technologiesUsed: [{ type: String, trim: true,  }],
         links: [namedLinkSchema]
     }],
     skills: [{
         _id: false,
-        category: { type: String, trim: true,  maxlength: 100 },
-        items: [{ type: String, trim: true,  maxlength: 100 }]
+        category: { type: String, trim: true,   },
+        items: [{ type: String, trim: true,   }]
     }],
     certifications: [certificationSchema],
     achievements: [achievementSchema],
