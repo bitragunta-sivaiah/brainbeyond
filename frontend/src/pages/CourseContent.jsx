@@ -10,9 +10,7 @@ import {
   addDoubt,
   submitCodingProblem,
 } from "../store/redux/studentCourseSlice";
-import {
-  issueCertificate,
-} from "../store/redux/courseCertificatesSlice";
+import { issueCertificate } from "../store/redux/courseCertificatesSlice";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle,
@@ -143,11 +141,8 @@ const CourseContent = () => {
     setActiveLesson(lesson);
     setQuizAnswers({}); // Reset quiz answers on lesson change
     setQuizResult(null);
-    setCodingProblemCode(""); // Clear code editor
+    setCodingProblemCode(lesson.type === "codingProblem" && lesson.content?.codingProblem?.starterCode ? lesson.content.codingProblem.starterCode : ""); // Clear code editor and set starter code
     setCodingOutput(null);
-    if (lesson.type === "codingProblem" && lesson.content?.codingProblem?.starterCode) {
-      setCodingProblemCode(lesson.content.codingProblem.starterCode);
-    }
   };
 
   const handleToggleComplete = async (lessonId) => {
@@ -279,6 +274,101 @@ const CourseContent = () => {
     }
   };
 
+  const renderQuizQuestion = (q, index) => {
+    const isCompleted = isLessonCompleted(fullActiveLesson._id);
+
+    // Render based on question type
+    switch (q.questionType) {
+      case 'short-answer':
+        return (
+          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
+            <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
+            <input
+              type="text"
+              value={quizAnswers[q._id] || ''}
+              onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
+              className="w-full p-2 rounded-md border border-input bg-input focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={isCompleted}
+            />
+          </div>
+        );
+      case 'fill-in-the-blank':
+        const parts = q.questionText.split('____');
+        return (
+          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
+            <p className="font-semibold text-lg mb-4 flex items-center flex-wrap">
+              {index + 1}. {parts[0]}
+              <input
+                type="text"
+                value={quizAnswers[q._id] || ''}
+                onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
+                className="mx-2 w-auto p-1.5 rounded-md border-b border-input bg-input focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={isCompleted}
+              />
+              {parts.slice(1).join('____')}
+            </p>
+          </div>
+        );
+      case 'true-false':
+        return (
+          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
+            <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
+            <div className="flex items-center space-x-4">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`question-${q._id}`}
+                  value="True"
+                  onChange={() => handleQuizAnswer(q._id, "True")}
+                  checked={quizAnswers[q._id] === "True"}
+                  className="accent-primary"
+                  disabled={isCompleted}
+                />
+                <span>True</span>
+              </label>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`question-${q._id}`}
+                  value="False"
+                  onChange={() => handleQuizAnswer(q._id, "False")}
+                  checked={quizAnswers[q._id] === "False"}
+                  className="accent-primary"
+                  disabled={isCompleted}
+                />
+                <span>False</span>
+              </label>
+            </div>
+          </div>
+        );
+      default: // Handles 'single-choice' and 'multiple-choice'
+        return (
+          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
+            <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
+            <div className="space-y-2">
+              {q.options.map((option, optIndex) => (
+                <label
+                  key={optIndex}
+                  className="flex items-center space-x-2 cursor-pointer p-2 rounded-md transition-colors hover:bg-muted"
+                >
+                  <input
+                    type="radio" // Use radio for single-choice/multiple-choice based on model logic
+                    name={`question-${q._id}`}
+                    value={option.optionText}
+                    onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
+                    checked={quizAnswers[q._id] === option.optionText}
+                    className="accent-primary"
+                    disabled={isCompleted}
+                  />
+                  <span>{option.optionText}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+    }
+  };
+
   const renderLessonContent = () => {
     if (!fullActiveLesson) {
       return (
@@ -355,28 +445,7 @@ const CourseContent = () => {
           return (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold mb-4">{fullActiveLesson.title}</h2>
-              {quiz.questions.map((q, index) => (
-                <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
-                  <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
-                  <div className="space-y-2">
-                    {q.options.map((option, optIndex) => (
-                      <label
-                        key={optIndex}
-                        className="flex items-center space-x-2 cursor-pointer p-2 rounded-md transition-colors hover:bg-muted"
-                      >
-                        <input
-                          type="radio"
-                          name={`question-${q._id}`}
-                          value={option.optionText}
-                          onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
-                          className="accent-primary"
-                        />
-                        <span>{option.optionText}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              {quiz.questions.map((q, index) => renderQuizQuestion(q, index))}
               <div className="flex justify-end">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
@@ -569,11 +638,16 @@ const CourseContent = () => {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => handleToggleComplete(activeLesson._id)}
+              disabled={
+                // Disable button for quizzes/coding problems until completed
+                (activeLesson.type === 'quiz' && !isLessonCompleted(activeLesson._id)) ||
+                (activeLesson.type === 'codingProblem' && !isLessonCompleted(activeLesson._id))
+              }
               className={`flex items-center px-4 py-2 rounded-full font-semibold transition-colors shrink-0 ${
                 isLessonCompleted(activeLesson._id)
                   ? "bg-secondary text-secondary-foreground"
                   : "bg-primary text-primary-foreground"
-              }`}
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {isLessonCompleted(activeLesson._id) ? "Mark as Incomplete" : "Mark as Complete"}
               <CheckCircle size={20} className="ml-2" />
