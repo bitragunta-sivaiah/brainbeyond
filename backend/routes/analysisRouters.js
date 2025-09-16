@@ -7,20 +7,17 @@ import { protect, authorize } from '../middleware/authMiddleware.js';
 import Ad from '../models/Ad.js';
 import Announcement from '../models/Announcement.js';
 import BlogPost from '../models/Blog.js';
-import Chapter from '../models/Chapter.js';
 import Contact from '../models/Contact.js';
 import Coupon from '../models/Coupon.js';
 import Course from '../models/Course.js';
 import FAQ from '../models/FAQ.js';
 import GroupChat from '../models/GroupChat.js';
-import Hero from '../models/Hero.js';
 import Lesson from '../models/Lesson.js';
 import LiveClass from '../models/LiveClass.js';
 import Order from '../models/Order.js';
-import Subscription from '../models/Subscription.js';
 import SupportTicket from '../models/SupportTicket.js';
 import User from '../models/User.js';
-import Progress from '../models/Progress.js'; // Import the new Progress model
+import Progress from '../models/Progress.js';
 
 const router = express.Router();
 
@@ -58,7 +55,7 @@ const getAverageResolutionTime = async () => {
 
     const totalMilliseconds = resolvedTickets.reduce((sum, ticket) => {
         if (ticket.closedAt && ticket.createdAt) {
-            return sum + (ticket.closedAt - ticket.createdAt);
+            return sum + (ticket.closedAt.getTime() - ticket.createdAt.getTime());
         }
         return sum;
     }, 0);
@@ -91,8 +88,8 @@ router.post('/export', protect, authorize('admin'), async (req, res) => {
                 exportFileName = 'users_export.xlsx';
                 worksheets.push({ name: 'Users', data: data });
                 break;
+
             case 'courses':
-                // Fetch courses and deeply populate chapters and lessons
                 const courses = await Course.find({ _id: { $in: ids } })
                     .populate({
                         path: 'chapters',
@@ -102,7 +99,6 @@ router.post('/export', protect, authorize('admin'), async (req, res) => {
                     })
                     .populate('instructors', 'fullName');
 
-                // Create a summary worksheet
                 const courseSummaryData = courses.map(course => ({
                     'Course Title': course.title,
                     'Category': course.category,
@@ -115,22 +111,20 @@ router.post('/export', protect, authorize('admin'), async (req, res) => {
                 }));
                 worksheets.push({ name: 'Course Summary', data: courseSummaryData });
 
-                // Create a detailed content worksheet
-                const detailedContentData = [];
-                detailedContentData.push(['Course', 'Chapter', 'Lesson Title', 'Lesson Type', 'Duration (min)', 'Points']);
+                const detailedContentData = [['Course', 'Chapter', 'Lesson Title', 'Lesson Type', 'Duration (min)', 'Points']];
                 courses.forEach(course => {
-                    detailedContentData.push([`Course: ${course.title}`, '', '', '', '', '']); // Add course header
+                    detailedContentData.push([`Course: ${course.title}`, '', '', '', '', '']);
                     if (course.chapters.length > 0) {
                         course.chapters.forEach(chapter => {
-                            detailedContentData.push(['', `Chapter: ${chapter.title}`, '', '', '', '']); // Add chapter header
+                            detailedContentData.push(['', `Chapter: ${chapter.title}`, '', '', '', '']);
                             if (chapter.lessons.length > 0) {
                                 chapter.lessons.forEach(lesson => {
                                     detailedContentData.push([
                                         '', '',
                                         lesson.title,
                                         lesson.type,
-                                        lesson.type === 'video' ? lesson.video.duration : 'N/A',
-                                        lesson.type === 'codingProblem' ? lesson.codingProblem.points : 'N/A'
+                                        lesson.type === 'video' ? lesson.video?.duration : 'N/A',
+                                        lesson.type === 'codingProblem' ? lesson.codingProblem?.points : 'N/A'
                                     ]);
                                 });
                             } else {
@@ -142,9 +136,9 @@ router.post('/export', protect, authorize('admin'), async (req, res) => {
                     }
                 });
                 worksheets.push({ name: 'Detailed Content', data: detailedContentData });
-
                 exportFileName = 'courses_details.xlsx';
                 break;
+
             case 'lessons':
                 const lessons = await Lesson.find({ _id: { $in: ids } })
                     .populate('course', 'title')
@@ -162,6 +156,7 @@ router.post('/export', protect, authorize('admin'), async (req, res) => {
                 exportFileName = 'lessons_export.xlsx';
                 worksheets.push({ name: 'Lessons', data: data });
                 break;
+
             case 'orders':
                 const orders = await Order.find({ _id: { $in: ids } }).populate('user', 'fullName email');
                 data = orders.map(order => ({
@@ -175,23 +170,39 @@ router.post('/export', protect, authorize('admin'), async (req, res) => {
                 exportFileName = 'orders_export.xlsx';
                 worksheets.push({ name: 'Orders', data: data });
                 break;
-            // Add more cases for other data types here (e.g., 'tickets', 'blogs')
+
+            case 'tickets':
+                const tickets = await SupportTicket.find({ _id: { $in: ids } })
+                    .populate('user', 'fullName email')
+                    .populate('assignedTo', 'fullName');
+
+                data = tickets.map(ticket => ({
+                    'Ticket ID': ticket._id,
+                    'Subject': ticket.subject,
+                    'User': ticket.user?.fullName,
+                    'User Email': ticket.user?.email,
+                    'Status': ticket.status,
+                    'Priority': ticket.priority,
+                    'Assigned To': ticket.assignedTo?.fullName || 'Unassigned',
+                    'Created At': ticket.createdAt.toISOString().slice(0, 10),
+                    'Closed At': ticket.closedAt ? ticket.closedAt.toISOString().slice(0, 10) : 'N/A'
+                }));
+                exportFileName = 'tickets_export.xlsx';
+                worksheets.push({ name: 'Support Tickets', data: data });
+                break;
+
             default:
                 return res.status(400).json({ message: 'Invalid data type specified.' });
         }
 
         const workbook = XLSX.utils.book_new();
-
         worksheets.forEach(ws => {
             const worksheet = ws.name === 'Detailed Content' ? XLSX.utils.aoa_to_sheet(ws.data) : XLSX.utils.json_to_sheet(ws.data);
             XLSX.utils.book_append_sheet(workbook, worksheet, ws.name);
         });
 
-        // Set response headers for file download
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=${exportFileName}`);
-
-        // Write the workbook and send it
         const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
         res.send(buffer);
 
@@ -262,7 +273,6 @@ router.get('/admin', protect, authorize('admin'), async (req, res) => {
         const upcomingEvents = await LiveClass.find({ startTime: { $gte: new Date() } }).sort({ startTime: 1 }).limit(5).select('title startTime instructor');
 
         // 6. Marketing & Features
-        const currentHero = await Hero.findOne({ active: true, role: { $in: ['all', 'admin'] } });
         const activeAds = await Ad.find({ isActive: true }).select('title position image');
 
         const adminDashboardData = {
@@ -279,7 +289,7 @@ router.get('/admin', protect, authorize('admin'), async (req, res) => {
                 adPerformance: adClicks[0] || { totalClicks: 0, totalImpressions: 0 },
                 recentContacts
             },
-            marketing: { currentHero, activeAds },
+            marketing: { activeAds },
             calendar: { upcomingEvents }
         };
         res.status(200).json(adminDashboardData);
@@ -305,7 +315,7 @@ router.get('/instructor', protect, authorize('instructor', 'admin'), async (req,
 
         // 2. Earnings and Financials (from completed orders for my courses)
         const earningsResult = await Order.aggregate([
-            { $match: { 'payment.status': 'completed', 'items.itemType': 'Course', 'items.itemId': { $in: myCourses.map(c => c._id) } } },
+            { $match: { 'payment.status': 'completed' } },
             { $unwind: '$items' },
             { $match: { 'items.itemType': 'Course', 'items.itemId': { $in: myCourses.map(c => c._id) } } },
             { $group: { _id: null, totalEarnings: { $sum: '$items.price' } } }
@@ -318,7 +328,8 @@ router.get('/instructor', protect, authorize('instructor', 'admin'), async (req,
             course.reviews.map(review => ({
                 courseTitle: course.title,
                 rating: review.rating,
-                comment: review.comment
+                comment: review.comment,
+                createdAt: review.createdAt
             }))
         ).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
 
@@ -417,7 +428,7 @@ router.get('/student', protect, authorize('student', 'admin'), async (req, res) 
             overallProgress: record.progressPercentage,
             completedLessons: record.completedLessons.length,
         }));
-        
+
         const totalEnrolledCourses = myCourses.length;
         const averageProgress = totalEnrolledCourses > 0 ? myCourses.reduce((sum, course) => sum + course.overallProgress, 0) / totalEnrolledCourses : 0;
 
@@ -460,6 +471,5 @@ router.get('/student', protect, authorize('student', 'admin'), async (req, res) 
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
-
 
 export default router;

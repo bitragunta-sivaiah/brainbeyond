@@ -4,7 +4,7 @@ import Subscription from '@/components/Subscription'
 import React from 'react'
 
 import Ads from '@/components/Ads'
-import Events from '@/components/Events'
+ 
 import Hero from '@/components/Hero'
 import { useSelector } from 'react-redux'
 import Features from '@/components/Features'
@@ -27,6 +27,7 @@ const Home = () => {
           <SpecialBB/>
           {/* <Events/> */}
           <Ads position='homepage-side'/>
+          <Ads position='enroll-course'/>
           {/* <Subscription/> */}
           {/* <Blogs/> */}
           <FAQ/>

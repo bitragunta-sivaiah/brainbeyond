@@ -27,7 +27,7 @@ const upload = multer({
 // 2. Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // Corrected to a valid, publicly available model
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
 
 // Added required worker configuration for pdfjs-dist on the server
@@ -37,7 +37,44 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `../../node_modules/pdfjs-dist/legacy/b
 // --- HELPER FUNCTIONS ---
 
 /**
- * Calls the Gemini API with a given prompt.
+ * A robust wrapper for the fetch API that includes automatic retries with exponential backoff.
+ * This makes API calls resilient to temporary server errors (5xx) and rate limiting (429).
+ * @param {string} url - The URL to fetch.
+ * @param {object} options - The options for the fetch call (method, headers, body).
+ * @param {number} retries - The maximum number of retries.
+ * @returns {Promise<Response>} The fetch response object.
+ */
+const fetchWithRetry = async (url, options, retries = 5) => {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            // Success (2xx) or a client-side error (4xx) that shouldn't be retried
+            if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+                return response;
+            }
+            // Specific check for retryable statuses (server errors or rate limiting)
+            if (response.status === 429 || response.status >= 500) {
+                 console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying in ${Math.pow(2, i)}s...`);
+                 lastError = new Error(`API call failed with status: ${response.status}`);
+                 // Exponential backoff with jitter: 2^i * 1000ms + random ms
+                 const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                 await new Promise(resolve => setTimeout(resolve, delay));
+                 continue; // Move to the next iteration to retry
+            }
+        } catch (error) {
+            lastError = error;
+            console.warn(`Attempt ${i + 1} failed with network error: ${error.message}. Retrying...`);
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    // If all retries fail, throw the last captured error
+    throw new Error(`API call failed after ${retries} attempts. Last error: ${lastError.message}`);
+};
+
+/**
+ * REFACTORED: Calls the Gemini API using the robust fetchWithRetry helper.
  * @param {string} prompt The prompt to send to the AI.
  * @returns {Promise<object>} The parsed JSON response from the AI.
  */
@@ -47,16 +84,19 @@ const callGemini = async (prompt) => {
         generationConfig: { responseMimeType: "application/json" }
     };
     try {
-        const response = await fetch(API_URL, {
+        // This now automatically handles retries for you
+        const response = await fetchWithRetry(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+
         if (!response.ok) {
             const errorBody = await response.text();
-            console.error("Gemini API Error:", errorBody);
-            throw new Error(`Gemini API request failed with status ${response.status}`);
+            console.error("Gemini API Error after retries:", errorBody);
+            throw new Error(`Gemini API request failed permanently with status ${response.status}`);
         }
+        
         const data = await response.json();
 
         if (!data.candidates || !data.candidates[0].content.parts[0].text) {
@@ -66,13 +106,15 @@ const callGemini = async (prompt) => {
         const rawJsonString = data.candidates[0].content.parts[0].text;
         const cleanedJsonString = rawJsonString.replace(/```json\n?|```/g, '').trim();
         return JSON.parse(cleanedJsonString);
+
     } catch (error) {
-        console.error('Error calling Gemini API:', error);
-        throw new Error('Failed to communicate with AI service.');
+        console.error('Error in callGemini function:', error);
+        throw new Error('Failed to communicate with the AI service after multiple attempts.');
     }
 };
 
 const extractTextFromBuffer = async (buffer, mimetype) => {
+    // This function is well-written, no changes needed.
     if (mimetype === 'application/pdf') {
         const data = new Uint8Array(buffer);
         const doc = await pdfjsLib.getDocument(data).promise;
@@ -92,6 +134,7 @@ const extractTextFromBuffer = async (buffer, mimetype) => {
 };
 
 const uploadBufferToCloudinary = (buffer) => {
+    // This function is well-written, no changes needed.
     return new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
             { resource_type: 'raw', folder: 'interview_resumes' },
@@ -102,14 +145,11 @@ const uploadBufferToCloudinary = (buffer) => {
         );
         uploadStream.end(buffer);
     });
-};
+}; 
 
-
-// --- ROUTER SETUP ---
 const router = express.Router();
-router.use(protect); // Protect all subsequent routes
+router.use(protect); // Protect all subsequent routes in this file
 
-// Middleware to fetch and authorize access to a preparation document
 const getPreparation = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         return res.status(400).json({ success: false, message: 'Invalid ID format.' });
@@ -121,13 +161,10 @@ const getPreparation = async (req, res, next) => {
         }
         next();
     } catch (error) {
+        console.error("Middleware getPreparation error:", error);
         res.status(500).json({ success: false, message: 'Server error while fetching document.' });
     }
 };
-
-
-// --- CORE CRUD ROUTES FOR INTERVIEW PREPARATION ---
-
 // CREATE a new Interview Preparation (with AI-generated learning plan)
 router.post('/', async (req, res) => {
     const { title, target, targetDate, description } = req.body;
@@ -141,22 +178,16 @@ router.post('/', async (req, res) => {
 
         The root JSON object must have "learning" and "practice" keys. Adhere STRICTLY to the following rules:
 
-        1. "learning" Object NOte:Dont repeat the same topic or question in both sections:
-            - "studyTopics": Array of 8-10 topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'.
-              - 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'.
-              - 'priority' MUST BE a Number from 1 to 5.
-            - "resources": Array of 1-2 objects per topic. Each object MUST have 'title', 'url', and 'type'.
-              - 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
-            - "preparedQuestions": Array of 8-10 questions. Each object MUST have 'question', 'category', and 'keywords'. For all questions, also provide 'answer' and 'notes' (using simple HTML).
-              - 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
+        1. "learning" Object:
+           - "studyTopics": Array of 8-10 topics. Each object MUST have 'topic', 'category', 'priority', and 'resources'. 'category' MUST BE one of: 'data-structures', 'algorithms', 'system-design', 'behavioral', 'domain-knowledge', 'company-values'. 'priority' MUST BE a Number from 1 to 5.
+           - "resources": Array of 1-2 objects per topic. Each object MUST have 'title', 'url', and 'type'. 'type' MUST BE one of: 'article', 'video', 'course', 'documentation', 'book'.
+           - "preparedQuestions": Array of 8-10 questions. Each object MUST have 'question', 'category', 'keywords', 'answer', and 'notes' (using simple HTML). 'category' MUST BE one of: 'behavioral', 'technical', 'situational', 'company-specific', 'general'.
 
         2. "practice" Object:
-            - "practiceProblems": Array of 2-3 coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'.
-              - 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'.
-              - 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
-            - "storyBank": Array of 5-6 behavioral prompts and fill all details on that prompt , situation , task, action , result and keywords. Each object MUST have: 'prompt', 'situation', 'task', 'action', 'result', and 'keywords'. For ONE prompt, provide a detailed example.  .
+           - "practiceProblems": Array of 2-3 coding problems. Each object MUST have 'title', 'url', 'source', and 'difficulty'. 'source' MUST BE one of: 'leetcode', 'hackerrank', 'codewars', 'custom', 'other'. 'difficulty' MUST BE one of: 'easy', 'medium', 'hard'.
+           - "storyBank": Array of 5-6 behavioral prompts. Each object MUST have: 'prompt', 'situation', 'task', 'action', 'result', and 'keywords'. For ONE prompt, provide a detailed example.
 
-        Output ONLY the raw JSON object. Do not use any markdown formatting.`;
+        Do not repeat topics or questions. Output ONLY the raw JSON object. Do not use any markdown formatting.`;
 
         const aiGeneratedPlan = await callGemini(creationPrompt);
 
@@ -168,7 +199,7 @@ router.post('/', async (req, res) => {
             user: req.user._id, title, target, targetDate, description,
             learning: aiGeneratedPlan.learning,
             practice: aiGeneratedPlan.practice,
-            assessment: { aiMockInterviews: [] }
+            assessment: { aiMockInterviews: [] } // Initialize assessment
         });
         res.status(201).json({ success: true, data: newPreparation });
     } catch (error) {
@@ -444,7 +475,6 @@ router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
     }
     
     try {
-        // Find the specific mock interview to get its start date for duration calculation
         const mockInterview = req.preparation.assessment.aiMockInterviews.id(mockId);
         if (!mockInterview) {
             return res.status(404).json({ success: false, message: 'Mock interview not found.' });
@@ -453,31 +483,25 @@ router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
         const transcriptText = transcript.map(t => `${t.speaker}: ${t.content}`).join('\n');
 
         const feedbackPrompt = `
-            You are a world-class interview coach. Analyze the following interview transcript for a "${req.preparation.target.role}" role and provide detailed feedback.
-
-            Transcript:
-            ---
-            ${transcriptText}
-            ---
-
-            Your Task: Generate a single JSON object. The object itself should have the following keys, populated with your analysis. Adhere STRICTLY to the formats described:
-
-            - "overallScore": A number from 0-100.
-            - "performanceSummary": A concise paragraph summarizing the user's performance.
-            - "contentAnalysis": An object with "clarity", "conciseness", "technicalAccuracy", each with "score" (a number from 0-10) and "feedback" (a string).
-            - "communicationAnalysis": An object with:
-                - "pacing": MUST be one of: "too-slow", "good", or "too-fast".
-                - "fillerWords": MUST be an object with "count" (number) and "words" (array of strings).
-                - "confidenceLevel": MUST be one of: "low", "medium", or "high".
-            - "suggestedAnswers": An array of 1-2 objects, each with "question" and "suggestedAnswer".
-            
-            Output ONLY the raw JSON object.`;
+        You are a world-class interview coach. Analyze the following interview transcript for a "${req.preparation.target.role}" role and provide detailed feedback.
+        Transcript:
+        ---
+        ${transcriptText}
+        ---
+        Your Task: Generate a single JSON object with the following keys:
+        - "overallScore": A number from 0-100.
+        - "performanceSummary": A concise paragraph summarizing performance.
+        - "contentAnalysis": An object with "clarity", "conciseness", "technicalAccuracy", each with "score" (0-10) and "feedback" (a string).
+        - "communicationAnalysis": An object with "pacing" ("too-slow", "good", "too-fast"), "fillerWords" ({"count": number, "words": [string]}), and "confidenceLevel" ("low", "medium", "high").
+        - "suggestedAnswers": An array of 1-2 objects, each with "question" and "suggestedAnswer".
+        
+        Output ONLY the raw JSON object.`;
 
         const aiFeedback = await callGemini(feedbackPrompt);
         
         const interviewDurationSeconds = Math.round((new Date() - new Date(mockInterview.date)) / 1000);
 
-        // This atomic update operation is the correct way to prevent race condition errors (VersionError).
+        // This atomic update prevents race conditions (VersionError).
         const updateResult = await InterviewPreparation.updateOne(
             { _id: req.preparation._id, 'assessment.aiMockInterviews._id': mockId },
             { 
@@ -488,7 +512,6 @@ router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
                 }
             },
             { 
-                // This 'arrayFilters' option targets the correct subdocument in the array.
                 arrayFilters: [{ 'interview._id': new mongoose.Types.ObjectId(mockId) }] 
             }
         );
@@ -496,23 +519,15 @@ router.post('/:id/assessment/:mockId/end', getPreparation, async (req, res) => {
         if (updateResult.modifiedCount === 0) {
             console.warn(`Interview end: No document was modified for prepId ${req.preparation._id} and mockId ${mockId}`);
         }
-
-        // Fetch the newly updated interview data to send back to the client.
-        const updatedPreparation = await InterviewPreparation.findById(req.preparation._id).lean();
-        const updatedInterview = updatedPreparation.assessment.aiMockInterviews.find(
-            interview => interview._id.toString() === mockId
-        );
         
-        if (!updatedInterview) {
-            return res.status(404).json({ success: false, message: 'Could not retrieve the updated interview.' });
-        }
-        
-        res.status(200).json({ success: true, data: updatedInterview });
+        res.status(200).json({ success: true, data: { aiFeedback } });
 
     } catch (error) {
-        console.error("Error ending interview and generating feedback:", error);
+        console.error("Error ending interview:", error);
         res.status(500).json({ success: false, message: 'Failed to end interview and generate feedback.' });
     }
 });
+
+
 
 export default router;

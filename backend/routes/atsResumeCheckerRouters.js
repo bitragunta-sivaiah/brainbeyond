@@ -7,6 +7,7 @@ import Tesseract from 'tesseract.js';
 import { createCanvas } from 'canvas';
 import { protect } from '../middleware/authMiddleware.js';
 import ATSResumeChecker from '../models/atsResumeCheckerModel.js';
+import fetch from 'node-fetch'; // Required for making API calls in Node.js
 
 // Initialize Express router
 const router = express.Router();
@@ -32,7 +33,6 @@ const upload = multer({
     }
 });
 
-
 // Configure Cloudinary (ensure environment variables are set)
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -40,14 +40,13 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Use the provided API URL and key - UPDATED to the new model
+// Use a stable Gemini model version for production
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
 /**
  * **Robust Text Extraction Helper**
- * Extracts text from various file formats (PDF, DOCX, TXT, Images) using
- * direct extraction and OCR fallbacks for maximum compatibility.
+ * Extracts text from various file formats (PDF, DOCX, TXT, Images).
  * @param {object} file - The file object from Multer.
  * @returns {Promise<string>} The extracted plain text from the file.
  */
@@ -71,7 +70,7 @@ const extractTextFromFile = async (file) => {
             let ocrText = '';
             for (let i = 1; i <= doc.numPages; i++) {
                 const page = await doc.getPage(i);
-                const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
+                const viewport = page.getViewport({ scale: 2.0 });
                 const canvas = createCanvas(viewport.width, viewport.height);
                 const context = canvas.getContext('2d');
                 await page.render({ canvasContext: context, viewport: viewport }).promise;
@@ -98,9 +97,41 @@ const extractTextFromFile = async (file) => {
     }
 };
 
+/**
+ * A wrapper for the fetch API that includes automatic retries with exponential backoff.
+ * This makes the API call resilient to temporary server errors (5xx) and rate limiting (429).
+ * @param {string} url - The URL to fetch.
+ * @param {object} options - The options for the fetch call (method, headers, body).
+ * @param {number} retries - The maximum number of retries.
+ * @returns {Promise<Response>} The fetch response object.
+ */
+const fetchWithRetry = async (url, options, retries = 5) => {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+                return response;
+            }
+            if (response.status === 429 || response.status >= 500) {
+                 console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying...`);
+                 lastError = new Error(`API call failed with status: ${response.status}`);
+                 const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                 await new Promise(resolve => setTimeout(resolve, delay));
+                 continue;
+            }
+        } catch (error) {
+            lastError = error;
+            console.warn(`Attempt ${i + 1} failed with network error: ${error.message}. Retrying...`);
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    throw new Error(`API call failed after ${retries} attempts. Last error: ${lastError.message}`);
+};
+
 // Main POST route for the ATS resume check
 router.post('/', protect, upload.single('resume'), async (req, res) => {
-    // 1. Validate incoming request
     if (!req.file) {
         return res.status(400).json({ message: 'No resume file uploaded.' });
     }
@@ -110,7 +141,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
     }
 
     try {
-        // 2. Upload file to Cloudinary and get a URL
+        // 1. Upload file to Cloudinary and get a URL
         const uploadResult = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream({ resource_type: 'raw' }, (error, result) => {
                 if (error) reject(error);
@@ -119,9 +150,8 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             uploadStream.end(req.file.buffer);
         });
 
-        // 3. Extract plain text from the resume file (any supported format)
+        // 2. Extract plain text from the resume file
         const resumeText = await extractTextFromFile(req.file);
-
         if (!resumeText || !resumeText.trim()) {
             throw new Error('Could not extract any readable text from the uploaded file.');
         }
@@ -135,8 +165,8 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             "Reduced", "Researched", "Resolved", "Reviewed", "Scheduled", "Streamlined", "Supervised",
             "Trained", "Transformed", "Upgraded", "Utilized", "Validated", "Verified", "Wrote"
         ];
-
-        // 4. Perform AI analysis using a direct fetch call to Gemini
+        
+        // 3. Construct the prompt for Gemini
         const prompt = `You are an extremely critical and precise ATS (Applicant Tracking System) and a highly experienced career coach. Your primary goal is to provide a 100% accurate and actionable analysis of a resume against a given job description. Provide the response as a perfectly valid JSON object. Do not include any text, notes, or explanations outside of the JSON object itself. Do not use markdown backticks.
 
         Job Description:
@@ -159,27 +189,27 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             - rating: Number from 0 to 10 for the section's quality, with 10 being perfect alignment with the job description.
         `;
 
-        const geminiResponse = await fetch(GEMINI_API_URL, {
+        // 4. Perform AI analysis using the robust fetchWithRetry function
+        const geminiResponse = await fetchWithRetry(GEMINI_API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
+                contents: [{ parts: [{ text: prompt }] }]
             })
-        });
+        }, 5); // Attempt API call up to 5 times
 
         if (!geminiResponse.ok) {
             const errorText = await geminiResponse.text();
-            throw new Error(`Gemini API call failed with status: ${geminiResponse.status}. Details: ${errorText}`);
+            throw new Error(`Gemini API call failed permanently with status: ${geminiResponse.status}. Details: ${errorText}`);
         }
 
         const geminiResult = await geminiResponse.json();
-        let responseText = geminiResult.candidates[0].content.parts[0].text;
 
-        // Clean up the response text before parsing
+        if (!geminiResult.candidates || !geminiResult.candidates[0]?.content?.parts[0]?.text) {
+             console.error("Invalid Gemini response structure:", geminiResult);
+             throw new Error('Received an invalid or empty response from the AI model.');
+        }
+        let responseText = geminiResult.candidates[0].content.parts[0].text;
         responseText = responseText.replace(/```json|```/g, '').trim();
 
         let analysisData;

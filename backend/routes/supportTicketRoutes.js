@@ -30,35 +30,27 @@ const getAIResponse = async (prompt) => {
             }],
         };
         const response = await axios.post(GEMINI_API_URL, payload);
-        // Added optional chaining and a trim() for safer response handling
         return response.data?.candidates?.[0]?.content?.parts?.[0]?.text.trim() || prompt;
     } catch (error) {
         console.error('Error calling Gemini API:', error.response ? error.response.data : error.message);
-        // Fallback to a safe message if AI fails
         return "I am currently unable to process this request. A human agent has been notified and will assist you soon.";
     }
 };
 
 /**
  * @description Creates a notification for a user with a role-based navigation link.
- * @param {string} userId - The ID of the user to notify.
- * @param {string} title - The title of the notification.
- * @param {string} message - The notification message.
- * @param {string} ticketId - The ID of the related support ticket.
  */
 const createNotification = async (userId, title, message, ticketId) => {
     try {
         if (!userId) return;
 
-        // Find the user to determine their role for the navigation link
         const userToNotify = await User.findById(userId).select('role');
         if (!userToNotify) {
             console.error(`Failed to create notification: User with ID ${userId} not found.`);
             return;
         }
 
-        // CORRECTED: Dynamically set the link prefix based on the user's role
-        let linkPrefix = '/support'; // Default prefix
+        let linkPrefix = '/support';
         switch (userToNotify.role) {
             case 'student':
                 linkPrefix = '/student/support';
@@ -71,21 +63,19 @@ const createNotification = async (userId, title, message, ticketId) => {
                 break;
         }
 
-        // Construct the full navigation link
         const navigateLink = `${linkPrefix}/${ticketId}`;
 
         const notification = new Notification({
             user: userId,
             title,
             message,
-            navigateLink: navigateLink // Use the dynamically generated link
+            navigateLink: navigateLink
         });
         await notification.save();
     } catch (error) {
         console.error(`Failed to create notification for user ${userId}:`, error);
     }
 };
-
 
 const populateTicket = (query) => {
     return query
@@ -95,10 +85,7 @@ const populateTicket = (query) => {
         .populate('history.actor', 'username fullName');
 };
 
-
 // --- STUDENT ROUTES ---
-
-// Create a new support ticket
 router.post(
     '/',
     protect,
@@ -127,7 +114,6 @@ router.post(
                 }]
             });
 
-            // Auto-assign to the least busy customer care agent
             const agents = await User.find({
                 role: 'customercare'
             }).select('_id');
@@ -193,7 +179,6 @@ router.post(
     }
 );
 
-// Add a response to a ticket (by student)
 router.post(
     '/:ticketId/responses',
     protect,
@@ -215,7 +200,9 @@ router.post(
             if (!ticket) return res.status(404).json({
                 message: 'Ticket not found.'
             });
-            if (ticket.user.toString() !== req.user._id.toString()) {
+
+            // FIX: Add check for ticket.user to prevent TypeError
+            if (ticket.user && ticket.user.toString() !== req.user._id.toString()) {
                 return res.status(403).json({
                     message: 'You are not authorized to update this ticket.'
                 });
@@ -266,8 +253,6 @@ router.post(
 );
 
 // --- UNIVERSAL & AGENT ROUTES ---
-
-// Get all tickets (for the logged-in user if student, or all if agent/admin)
 router.get('/', protect, async (req, res) => {
     try {
         const query = req.user.role === 'student' ? {
@@ -288,7 +273,6 @@ router.get('/', protect, async (req, res) => {
     }
 });
 
-// Get a single ticket by its ID
 router.get('/:ticketId', protect, async (req, res) => {
     try {
         const ticketQuery = SupportTicket.findOne({
@@ -299,7 +283,8 @@ router.get('/:ticketId', protect, async (req, res) => {
             message: 'Ticket not found'
         });
 
-        const isOwner = ticket.user._id.toString() === req.user._id.toString();
+        // FIX: Add check for ticket.user to prevent TypeError
+        const isOwner = ticket.user && ticket.user._id.toString() === req.user._id.toString();
         const isAgent = ['customercare', 'admin'].includes(req.user.role);
         if (!isOwner && !isAgent) {
             return res.status(403).json({
@@ -315,8 +300,6 @@ router.get('/:ticketId', protect, async (req, res) => {
     }
 });
 
-
-// Add a response from a customer care agent, enhanced by AI
 router.post(
     '/:ticketId/agent-response',
     protect,
@@ -339,37 +322,39 @@ router.post(
                 message: 'Ticket not found'
             });
 
-            // --- AI Professionalization Step ---
             const professionalizationPrompt = `
-              You are a professional communication assistant for a customer support team.
-              Your task is to review a support agent's draft response to a student.
-              Rewrite the following message to be more professional, empathetic, and clear.
-              Correct any spelling or grammar mistakes. Do not change the core meaning of the message.
-              Keep the tone helpful and supportive.
-              The output should ONLY be the revised message text, without any introductory phrases like "Here's the revised message:".
+                You are a professional communication assistant for a customer support team.
+                Your task is to review a support agent's draft response to a student.
+                Rewrite the following message to be more professional, empathetic, and clear.
+                Correct any spelling or grammar mistakes. Do not change the core meaning of the message.
+                Keep the tone helpful and supportive.
+                The output should ONLY be the revised message text, without any introductory phrases like "Here's the revised message:".
 
-              Agent's Draft: "${message}"
+                Agent's Draft: "${message}"
 
-              Revised Message:
+                Revised Message:
             `;
 
             const professionalMessage = await getAIResponse(professionalizationPrompt);
-            // --- End of AI Step ---
 
             ticket.responses.push({
                 user: req.user._id,
-                message: professionalMessage, // Use the AI-enhanced message
+                message: professionalMessage,
                 attachments: attachments || []
             });
             ticket.status = 'awaiting_user';
             await ticket.save();
 
-            await createNotification(
-                ticket.user,
-                `Update on Your Ticket: #${ticket.ticketId}`,
-                `A support agent has replied to your ticket "${ticket.subject}".`,
-                ticket.ticketId
-            );
+            // The 'ticket.user' field is required on the model, so it shouldn't be null here
+            // but for safety, we'll keep the check.
+            if (ticket.user) {
+                await createNotification(
+                    ticket.user,
+                    `Update on Your Ticket: #${ticket.ticketId}`,
+                    `A support agent has replied to your ticket "${ticket.subject}".`,
+                    ticket.ticketId
+                );
+            }
 
             const populatedTicket = await populateTicket(SupportTicket.findById(ticket._id));
             res.status(200).json(populatedTicket);
@@ -382,7 +367,6 @@ router.post(
     }
 );
 
-// Update ticket details (status, priority, assignment)
 router.put(
     '/:ticketId/details',
     protect,

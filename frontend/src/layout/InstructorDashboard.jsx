@@ -38,7 +38,7 @@ const navCategories = [
       { name: 'My Courses', path: '/instructor/courses', icon: <Book size={20} /> },
       { name: 'My Course Chapters', path: '/instructor/courses-content', icon: <BookText size={20} /> },
       { name: 'Blog', path: '/instructor/blog', icon: <Rss size={20} /> },
-      { name: 'Homepage', path: '/instructor/homepage', icon: <Home size={20} /> },
+ 
     ],
   },
   {
@@ -48,7 +48,7 @@ const navCategories = [
     links: [
       { name: 'Announcements', path: '/instructor/announcements', icon: <Megaphone size={20} /> },
       { name: 'Group Chat', path: '/instructor/groups', icon: <MessageSquare size={20} /> },
-      { name: 'Events', path: '/instructor/events', icon: <CalendarDays size={20} /> },
+ 
     ],
   },
 ];

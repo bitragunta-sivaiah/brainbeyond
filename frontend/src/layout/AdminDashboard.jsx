@@ -51,10 +51,8 @@ const navCategories = [
       { name: 'Users', path: '/admin/users', icon: <Users size={20} /> },
       { name: 'Courses', path: '/admin/courses', icon: <Book size={20} /> },
       { name: 'Courses Chapters', path: '/admin/courses/chapters', icon: <Book size={20} /> },
-      { name: 'Hero', path: '/admin/hero', icon: <Home size={20} /> }, // Added Homepage link
       { name: 'Blog', path: '/admin/blog', icon: <Newspaper size={20} /> },
       { name: 'Groups & Chats', path: '/admin/groups', icon: <MessageCircle size={20} /> },
-      { name: 'Events', path: '/admin/events', icon: <Calendar size={20} /> },
     ],
   },
   {

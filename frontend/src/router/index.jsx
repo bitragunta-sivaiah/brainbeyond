@@ -16,6 +16,7 @@ import SettingsPage from "@/components/SettingsPage";
 import Subscription from "@/components/Subscription";
 import VerificationTokenCertificate from "@/components/VerificationTokenCertificate";
 import AdminDataHistory from "@/layout/AdminDataHistory";
+import LoadingScreen from "@/layout/LoadingScreen";
 import StudentDashboard from "@/layout/StudentDashboard";
 import AdminContactManager from "@/pages/admin/AdminContactManager";
 import AdminInterviewQuestions from "@/pages/AdminInterviewQuestions";
@@ -54,11 +55,10 @@ const NonFound = React.lazy(() => import("../components/NonFound"));
 const AdminDashboard = React.lazy(() => import("@/layout/AdminDashboard"));
 const AdminAnalysis = React.lazy(() => import("@/layout/AdminAnalysis"));
 const UserManager = React.lazy(() => import("@/pages/admin/UserManager"));
-const HeroManager = React.lazy(() => import("@/pages/admin/HeroManger"));
 const CourseManager = React.lazy(() => import("@/pages/admin/CourseManager"));
 const AdminCourseContentManager = React.lazy(() => import("@/pages/admin/CourseContentManager"));
 const BlogManager = React.lazy(() => import("@/pages/admin/BlogManager"));
-const EventManager = React.lazy(() => import("@/pages/admin/EventManager"));
+ 
 const SubscriptionManager = React.lazy(() => import("@/pages/admin/SubscriptionManager"));
 const CouponManager = React.lazy(() => import("@/pages/admin/CouponManager"));
 const PurchaseManager = React.lazy(() => import("@/pages/admin/PurchaseManager"));
@@ -69,24 +69,24 @@ const CreateCourse = React.lazy(() => import("../components/CreateCourse"));
 const UpdateCourse = React.lazy(() => import("../components/UpdateCourse"));
 const AdminAndInstructorGroupChatManager = React.lazy(() => import("../pages/AdminAndInstructorGroupChatManager"));
 const AdminAndInstructorSupporter = React.lazy(() => import("../pages/AdminAndInstructorSupporter"));
-const AdminProfile = React.lazy(() => import("@/pages/admin/AdminProfile"));
+ 
 
 // Instructor Layout and Pages
 const InstructorDashboard = React.lazy(() => import("@/layout/InstructorDashboard"));
 const InstructorAnalysis = React.lazy(() => import("@/layout/InstructorAnalysis"));
-const InstructorProfile = React.lazy(() => import("@/pages/instructor/InstructorProfile"));
+ 
 const InstructorCoursesContentManager = React.lazy(() => import("@/pages/instructor/InstructorCoursesContentManager"));
 const InstructorCourseManager = React.lazy(() => import("@/pages/instructor/InstructorCourseManager"));
 const InstructorBlogManager = React.lazy(() => import("@/pages/instructor/InstructorBlogManager"));
 const AnnouncementManager = React.lazy(() => import("@/pages/instructor/AnnouncementManager"));
-const InstructorEventManager = React.lazy(() => import("@/pages/instructor/InstructorEventManager"));
+ 
 
 // Customer Care Layout and Pages
 const CustomerCareDashboard = React.lazy(() => import("../pages/customerCare/CustomerCareDashboard"));
-const CustomerCareSupportManager = React.lazy(() => import("../pages/CustomerCareSupport"));
+ 
 const AssignedTickets = React.lazy(() => import("../pages/customerCare/AssignedTickets"));
 const EscalatedTickets = React.lazy(() => import("../pages/customerCare/EscalatedTickets"));
-const AllTickets = React.lazy(() => import("../pages/customerCare/AllTickets")); // Added AllTickets for completeness
+ 
 const CustomerCareAnalysis = React.lazy(() => import("../layout/CustomerCareAnalysis")); // Added AllTickets for completeness
 
 
@@ -97,7 +97,7 @@ export const router = createBrowserRouter([
     {
         path: '/',
         element: (
-            <Suspense fallback={<div>Loading Application...</div>}>
+            <Suspense fallback={<div><LoadingScreen/></div>}>
                 <App />
             </Suspense>
         ),
@@ -149,7 +149,7 @@ export const router = createBrowserRouter([
             {
                 path: 'admin',
                 element: (
-                    <Suspense fallback={<div>Loading Admin Panel...</div>}>
+                    <Suspense fallback={<div><LoadingScreen/></div>}>
                         <AdminDashboard />
                     </Suspense>
                 ),
@@ -157,13 +157,13 @@ export const router = createBrowserRouter([
                     { index: true, element: <AdminAnalysis /> }, // Default admin route
                     { path: 'dashboard', element: <AdminAnalysis /> }, // Admin's own profile
                     { path: 'analytics', element: <AdminAnalysis /> }, // Admin's own profile
-                    { path: 'profile', element: <AdminProfile /> }, // Admin's own profile
+                    { path: 'profile', element: <Profile /> }, // Admin's own profile
                     { path: 'users', element: <UserManager /> },
-                    { path: 'hero', element: <HeroManager /> },
+                
                     { path: 'courses', element: <CourseManager /> },
                     { path: 'courses/chapters', element: <AdminCourseContentManager /> },
                     { path: 'blog', element: <BlogManager /> },
-                    { path: 'events', element: <EventManager /> },
+ 
                     { path: 'subscriptions', element: <SubscriptionManager /> },
                     { path: 'coupons', element: <CouponManager /> },
                     { path: 'purchases', element: <AllOrderManager /> },
@@ -186,21 +186,21 @@ export const router = createBrowserRouter([
             {
                 path: 'instructor',
                 element: (
-                    <Suspense fallback={<div>Loading Instructor Panel...</div>}>
+                    <Suspense fallback={<div><LoadingScreen/></div>}>
                         <InstructorDashboard />
                     </Suspense>
                 ),
                 children: [
                     { index: true, element: <InstructorAnalysis /> }, // Default instructor route
                     { path: 'dashboard', element: <InstructorAnalysis /> }, // Instructor's own profile
-                    { path: 'profile', element: <InstructorProfile /> }, // Instructor's own profile
+                
                     { path: 'courses-content', element: <InstructorCoursesContentManager /> },
                     { path: 'courses', element: <InstructorCourseManager /> },
                     { path: 'create-Course', element: <CreateCourse /> },
                     { path: 'update-Course/:courseId', element: <UpdateCourse /> },
                     { path: 'blog', element: <InstructorBlogManager /> },
                     { path: 'announcements', element: <AnnouncementManager /> },
-                    { path: 'events', element: <InstructorEventManager /> },
+ 
                     { path: 'support', element: <AdminAndInstructorSupporter /> }, // Shared support component
                     { path: 'support/:ticketId', element: <AdminAndInstructorSupporter /> }, // Shared support component
                 ],
@@ -210,7 +210,7 @@ export const router = createBrowserRouter([
             {
                 path: 'customercare',
                 element: (
-                    <Suspense fallback={<div>Loading Customer Care Panel...</div>}>
+                    <Suspense fallback={<div><LoadingScreen/></div>}>
                         <CustomerCareDashboard />
                     </Suspense>
                 ),

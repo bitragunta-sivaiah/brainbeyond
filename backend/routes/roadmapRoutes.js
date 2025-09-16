@@ -4,15 +4,59 @@ import mongoose from 'mongoose';
 
 // Import required models and middleware
 import LearningRoadmap from '../models/LearningRoadmap.js';
-import User from '../models/User.js';
-import Notification from '../models/Notification.js';
+// import User from '../models/User.js'; // Uncomment if needed
+// import Notification from '../models/Notification.js'; // Uncomment if needed
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// --- AI-Powered Roadmap Generation (ENHANCED) ---
+// ==============================================================================
+// --- CORE HELPER FUNCTIONS (WITH RESILIENCE) ---
+// ==============================================================================
+
+/**
+ * **NEW: ROBUST API CALL HELPER WITH EXPONENTIAL BACKOFF**
+ * This function replaces direct API calls to handle transient errors like overloads.
+ * It automatically retries on server errors (5xx) or rate limiting (429).
+ * @param {string} url - The API endpoint URL.
+ * @param {object} options - The request options (method, headers, body).
+ * @param {number} retries - The maximum number of retries.
+ * @returns {Promise<object>} The parsed JSON data from the successful API response.
+ */
+const callApiWithRetry = async (url, options, retries = 5) => {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            // If the request is successful or it's a client error that shouldn't be retried
+            if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+                return response.json();
+            }
+            // If it's a rate limit or server error, wait and retry
+            if (response.status === 429 || response.status >= 500) {
+                console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying...`);
+                lastError = new Error(`API call failed with status: ${response.status}`);
+                const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; // Exponential backoff with jitter
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+            }
+        } catch (error) {
+            lastError = error;
+            console.warn(`Attempt ${i + 1} failed with network error: ${error.message}. Retrying...`);
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    // If all retries fail, throw the last known error
+    throw new Error(`API call failed after ${retries} attempts. Last error: ${lastError.message}`);
+};
+
+
+// ==============================================================================
+// --- ROUTES ---
+// ==============================================================================
 
 /**
  * @route   POST /api/v1/roadmaps/generate-with-ai
@@ -36,6 +80,7 @@ router.post('/generate-with-ai', protect, async (req, res) => {
     const userPrompt = `Create a comprehensive, practical, day-by-day learning roadmap for a student who wants to learn "${skill}".
     The target proficiency level is "${skillLevel}", and the plan must be structured for exactly "${totalDurationDays}" days.`;
 
+    // ADDED: The complete systemInstruction prompt as requested
     const systemInstruction = `You are an expert curriculum designer and career coach. Your task is to generate a detailed, day-by-day learning roadmap.
     
     You MUST return the response as a single, valid JSON object. Do not include any text, markdown, or explanations outside of the JSON object.
@@ -75,31 +120,26 @@ router.post('/generate-with-ai', protect, async (req, res) => {
     3.  **Realistic Plan:** Ensure the daily activities and estimated times are practical and realistic for a learner.
     4.  **No Extra Text:** The final output must be ONLY the JSON object, starting with { and ending with }.`;
 
-    // <--- UPDATED: Using the gemini-2.5-flash model as requested.
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+    // CORRECTED: Use a stable, recent model for better performance and reliability.
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
     try {
-        // 3. Call Gemini AI API
-        const aiResponse = await fetch(API_URL, {
+        // 3. Call Gemini AI API (Now with retry logic)
+        const payload = {
+            contents: [{ parts: [{ text: userPrompt }] }],
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            generationConfig: {
+                responseMimeType: "application/json",
+            }
+        };
+        
+        const result = await callApiWithRetry(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: userPrompt }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-                generationConfig: {
-                    responseMimeType: "application/json",
-                }
-            })
+            body: JSON.stringify(payload)
         });
 
-        if (!aiResponse.ok) {
-            const errorBody = await aiResponse.text();
-            console.error('Gemini API Error:', errorBody);
-            return res.status(500).json({ success: false, message: `Failed to generate content from AI. Status: ${aiResponse.status}` });
-        }
-
         // 4. Parse AI Response
-        const result = await aiResponse.json();
         const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!jsonText) {
@@ -132,13 +172,10 @@ router.post('/generate-with-ai', protect, async (req, res) => {
 
     } catch (error) {
         console.error('Error in /generate-with-ai route:', error);
-        res.status(500).json({ success: false, message: 'Server error while generating AI roadmap.' });
+        res.status(500).json({ success: false, message: error.message || 'Server error while generating AI roadmap.' });
     }
 });
 
-
-// --- Standard CRUD and Feature Routes ---
-// (The rest of the file remains the same)
 
 /**
  * @route   GET /api/v1/roadmaps

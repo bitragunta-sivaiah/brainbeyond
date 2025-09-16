@@ -53,6 +53,7 @@
     "framer-motion": "^12.23.12",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
+    "json2csv": "^6.0.0-alpha.2",
     "jspdf": "^3.0.2",
     "jspdf-autotable": "^5.0.2",
     "lodash": "^4.17.21",

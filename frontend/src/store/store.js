@@ -1,7 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 import userReducer from "./redux/authSlice";
 import uploadReducer from "./redux/uploadSlice";
-import adminReducer from "./redux/adminSlice";
+ 
 import faqReducer from "./redux/faqSlice";
 import marqueeReducer from "./redux/marqueeSlice";
 import notificationReducer from "./redux/notificationSlice";
@@ -10,17 +10,16 @@ import coursecontentReducer from "./redux/courseContentSlice"; // Importing the 
 import blogReducer from "./redux/blogSlice"; // Importing the blog reducer
 import subscriptionsReducer from "./redux/subscriptionSlice";
 import analysisReducer from "./redux/analysisSlice";
-import homepageReducer from "./redux/homepageSlice";
+ 
 import dataReducer from "./redux/dataSlice";
-import eventReducer from "./redux/eventSlice";
+ 
 import couponReducer from "./redux/couponSlice";
-import instructorReducer from "./redux/instructorSlice";
-import heroReducer from "./redux/heroSlice";
+ 
 import groupChatReducer from "./redux/groupChatSlice";
 import supportTicketReducer from "./redux/supportTicketSlice";
 import studentCourseReducer from "./redux/studentCourseSlice";
 import courseCertificatesReducer from "./redux/courseCertificatesSlice";
-import studentProfileReducer from "./redux/studentProfileSlice";
+ 
 import liveClassSliceReducer from "./redux/liveClassSlice";
 import contactReducer from './redux/contactSlice'
 import interviewsReducer from './redux/interviewPreparationSlice'
@@ -34,7 +33,7 @@ export const store = configureStore({
   reducer: {
     auth: userReducer,
     upload: uploadReducer,
-    admin: adminReducer,
+    // admin: adminReducer,
     faq: faqReducer,
     marquee: marqueeReducer,
     notifications: notificationReducer,
@@ -43,17 +42,17 @@ export const store = configureStore({
     blog: blogReducer,
     subscriptions: subscriptionsReducer,
     dashboard: analysisReducer,
-    homepage: homepageReducer,
+    // homepage: homepageReducer,
     data: dataReducer,
-    events: eventReducer,
+    // events: eventReducer,
     coupons: couponReducer,
-    instructor: instructorReducer,
-    hero: heroReducer,
+    // instructor: instructorReducer,
+    // hero: heroReducer,
     groupChat: groupChatReducer,
     supportTicket: supportTicketReducer,
     studentCourses: studentCourseReducer,
     certificates: courseCertificatesReducer,
-    studentProfile: studentProfileReducer,
+    // studentProfile: studentProfileReducer,
     liveClasses: liveClassSliceReducer,
     contact: contactReducer,
     interview: interviewsReducer,

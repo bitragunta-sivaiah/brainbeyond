@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { io } from 'socket.io-client';
 import { Toaster, toast } from 'react-hot-toast';
-import { useParams, useNavigate } from 'react-router-dom'; // <-- Import useParams and useNavigate
+import { useParams, useNavigate } from 'react-router-dom';
 
 // --- Redux Actions ---
 import {
@@ -12,12 +12,12 @@ import {
     addAgentResponse,
     updateTicketDetails,
     clearTicket,
-} from '../store/redux/supportTicketSlice'; // Adjust path as needed
-import { uploadBulkFiles } from '../store/redux/uploadSlice'; // Adjust path as needed
+} from '../store/redux/supportTicketSlice';
+import { uploadBulkFiles } from '../store/redux/uploadSlice';
 
 // --- Icons ---
 import {
-    X, Paperclip, Send, Loader, FileText, Image as ImageIcon, Trash2, FileArchive, Inbox
+    X, Paperclip, Send, Loader, Inbox
 } from 'lucide-react';
 import { RiRobot2Fill } from "react-icons/ri";
 
@@ -67,23 +67,20 @@ const getPriorityBadge = (priority) => {
 // --- Main Component ---
 const CustomerCareSupport = () => {
     const dispatch = useDispatch();
-    const navigate = useNavigate(); // <-- Initialize navigate
-    const { ticketId: ticketIdFromParams } = useParams(); // <-- Get ticketId from URL
+    const navigate = useNavigate();
+    const { ticketId: ticketIdFromParams } = useParams();
 
     const { user: currentUser } = useSelector((state) => state.auth);
     const { tickets, ticket: selectedTicket, loading: ticketLoading } = useSelector((state) => state.supportTicket);
     
-    const [agents, setAgents] = useState([]); // This would be fetched from your backend
+    const [agents, setAgents] = useState([]);
     const [selectedTicketId, setSelectedTicketId] = useState(null);
     const [filters, setFilters] = useState({ status: 'all', priority: 'all' });
 
-    // Effect to fetch all tickets
     useEffect(() => {
         dispatch(getTickets());
-        // TODO: In a real app, dispatch an action to fetch the list of agents
     }, [dispatch]);
     
-    // Effect to sync URL parameter with the component's state
     useEffect(() => {
         if (ticketIdFromParams) {
             setSelectedTicketId(ticketIdFromParams);
@@ -92,7 +89,6 @@ const CustomerCareSupport = () => {
         }
     }, [ticketIdFromParams]);
     
-    // Effect to fetch details of the selected ticket
     useEffect(() => {
         if (selectedTicketId) {
             dispatch(getTicketById(selectedTicketId));
@@ -101,7 +97,6 @@ const CustomerCareSupport = () => {
         }
     }, [selectedTicketId, dispatch]);
 
-    // Effect for Socket.IO connection and real-time updates
     useEffect(() => {
         const socket = io(SOCKET_SERVER_URL, {
             query: { userId: currentUser?._id },
@@ -109,13 +104,11 @@ const CustomerCareSupport = () => {
         });
 
         const handleUpdate = (updatedTicket) => {
-              toast.success(`Ticket #${updatedTicket.ticketId} has been updated.`);
-              // Refresh the main list
-              dispatch(getTickets());
-              // If we're viewing this ticket, refresh its details too
-              if (updatedTicket.ticketId === selectedTicketId) {
-                  dispatch(getTicketById(updatedTicket.ticketId));
-              }
+            toast.success(`Ticket #${updatedTicket.ticketId} has been updated.`);
+            dispatch(getTickets());
+            if (updatedTicket.ticketId === selectedTicketId) {
+                dispatch(getTicketById(updatedTicket.ticketId));
+            }
         }
 
         socket.on('new_ticket_created', handleUpdate);
@@ -128,7 +121,6 @@ const CustomerCareSupport = () => {
         };
     }, [currentUser, selectedTicketId, dispatch]);
 
-    // Memoized filtering of tickets
     const filteredTickets = useMemo(() => {
         return tickets.filter(t => {
             const statusMatch = filters.status === 'all' || t.status === filters.status;
@@ -138,8 +130,7 @@ const CustomerCareSupport = () => {
     }, [tickets, filters]);
 
     const handleSelectTicket = (ticketId) => {
-        // Assume the base route is '/admin/support' or similar
-        navigate(`/customercare/support/${ticketId}`); 
+        navigate(`/customercare/support/${ticketId}`);
     };
 
     const handleBackToList = () => {
@@ -158,11 +149,11 @@ const CustomerCareSupport = () => {
                         <div className="p-4 text-center">Loading tickets...</div>
                     ) : (
                         filteredTickets.map((t) => (
-                           <TicketListItem 
-                                key={t._id} 
-                                ticket={t} 
-                                isSelected={selectedTicketId === t.ticketId} 
-                                onSelect={() => handleSelectTicket(t.ticketId)} 
+                           <TicketListItem
+                                key={t._id}
+                                ticket={t}
+                                isSelected={selectedTicketId === t.ticketId}
+                                onSelect={() => handleSelectTicket(t.ticketId)}
                            />
                         ))
                     )}
@@ -172,10 +163,10 @@ const CustomerCareSupport = () => {
             {/* Ticket Details Panel */}
             <main className={`w-full md:w-3/5 lg:w-2/3 flex flex-col transition-transform duration-300 ${selectedTicketId ? 'flex' : 'hidden md:flex'}`}>
                 {selectedTicket ? (
-                    <TicketDetailsPanel 
-                        ticket={selectedTicket} 
-                        agents={agents} 
-                        onBack={handleBackToList} 
+                    <TicketDetailsPanel
+                        ticket={selectedTicket}
+                        agents={agents}
+                        onBack={handleBackToList}
                     />
                 ) : (
                     <div className="flex items-center justify-center h-full">
@@ -220,27 +211,33 @@ const TicketListFilters = ({ filters, setFilters }) => {
     );
 };
 
-const TicketListItem = ({ ticket, isSelected, onSelect }) => (
-    <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        onClick={onSelect}
-        className={`p-4 border-b border-border cursor-pointer hover:bg-muted ${isSelected ? 'bg-accent' : ''}`}
-    >
-        <div className="flex justify-between items-start mb-2">
-            <h3 className="font-bold font-heading text-md truncate pr-2 flex-1">{ticket.subject}</h3>
-            {getPriorityBadge(ticket.priority)}
-        </div>
-        <div className="flex justify-between items-center text-sm text-custom">
-            <span className="truncate pr-2">#{ticket.ticketId} by {ticket.user.fullName || ticket.user.username}</span>
-            {getStatusBadge(ticket.status)}
-        </div>
-        <div className="text-xs text-muted-foreground mt-2 flex justify-between">
-            <span>Assigned: {ticket.assignedTo?.username || 'Unassigned'}</span>
-            <span>Last Update: {formatDate(ticket.updatedAt)}</span>
-        </div>
-    </motion.div>
-);
+const TicketListItem = ({ ticket, isSelected, onSelect }) => {
+    // Corrected to handle cases where ticket.user might be null
+    const userName = ticket.user?.fullName || ticket.user?.username || 'Unknown User';
+    const assignedToName = ticket.assignedTo?.username || 'Unassigned';
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            onClick={onSelect}
+            className={`p-4 border-b border-border cursor-pointer hover:bg-muted ${isSelected ? 'bg-accent' : ''}`}
+        >
+            <div className="flex justify-between items-start mb-2">
+                <h3 className="font-bold font-heading text-md truncate pr-2 flex-1">{ticket.subject}</h3>
+                {getPriorityBadge(ticket.priority)}
+            </div>
+            <div className="flex justify-between items-center text-sm text-custom">
+                <span className="truncate pr-2">#{ticket.ticketId} by {userName}</span>
+                {getStatusBadge(ticket.status)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-2 flex justify-between">
+                <span>Assigned: {assignedToName}</span>
+                <span>Last Update: {formatDate(ticket.updatedAt)}</span>
+            </div>
+        </motion.div>
+    );
+};
 
 const TicketDetailsPanel = ({ ticket, agents, onBack }) => {
     const { user: currentUser } = useSelector((state) => state.auth);
@@ -264,9 +261,8 @@ const TicketDetailsPanel = ({ ticket, agents, onBack }) => {
         if (attachments.length > 0) {
             const uploadAction = await dispatch(uploadBulkFiles(attachments));
             if (uploadBulkFiles.fulfilled.match(uploadAction)) {
-                // Adjust this mapping to your actual API response for file uploads
                 uploadedAttachments = uploadAction.payload.data.map(f => ({ url: f.fileUrl, contentType: f.fileType }));
-            } else return; // Upload failed
+            } else return;
         }
         
         const responseData = { ticketId: ticket.ticketId, message, attachments: uploadedAttachments };
@@ -283,7 +279,7 @@ const TicketDetailsPanel = ({ ticket, agents, onBack }) => {
             {/* Header */}
             <header className="p-4 border-b border-border flex items-center justify-between">
                 <div>
-                     <h2 className="text-xl font-bold font-heading">{ticket.subject}</h2>
+                    <h2 className="text-xl font-bold font-heading">{ticket.subject}</h2>
                     <p className="text-sm text-custom">Ticket #{ticket.ticketId}</p>
                 </div>
                 <button onClick={onBack} className="md:hidden p-2 rounded-full hover:bg-muted">
@@ -295,25 +291,31 @@ const TicketDetailsPanel = ({ ticket, agents, onBack }) => {
                 {/* Main Conversation */}
                 <div className="flex-grow flex flex-col">
                     <div className="flex-grow p-4 overflow-y-auto custom-scrollbar">
-                        {ticket.responses?.map((res, index) => (
-                            <div key={index} className={`flex items-end gap-3 mb-6 ${res.user?._id === currentUser._id ? 'justify-end' : 'justify-start'}`}>
-                                {res.user?._id !== currentUser._id && (
-                                    res.isAIMessage ? (
-                                     <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground self-start shrink-0"><RiRobot2Fill size={24} /></div>
-                                    ) : (
-                                     <img src={res.user?.profileInfo?.avatar || `https://ui-avatars.com/api/?name=${res.user?.fullName}`} alt="avatar" className="w-10 h-10 rounded-full object-cover self-start shrink-0" />
-                                    )
-                                )}
-                                <div className={`max-w-lg p-3 rounded-xl ${res.user?._id === currentUser._id ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card border border-border rounded-bl-none'}`}>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="font-bold text-sm">{res.user?._id === currentUser._id ? 'You' : (res.isAIMessage ? 'AI Assistant' : res.user?.fullName)}</span>
-                                        <span className="text-xs opacity-70">{formatDate(res.createdAt)}</span>
+                        {ticket.responses?.map((res, index) => {
+                            // Determine the display name and avatar, handling null users
+                            const isCurrentUser = res.user?._id === currentUser._id;
+                            const displayName = isCurrentUser ? 'You' : (res.isAIMessage ? 'AI Assistant' : res.user?.fullName || res.user?.username || 'Unknown User');
+                            const avatarSrc = res.isAIMessage ? null : res.user?.profileInfo?.avatar || `https://ui-avatars.com/api/?name=${displayName}`;
+
+                            return (
+                                <div key={index} className={`flex items-end gap-3 mb-6 ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
+                                    {!isCurrentUser && (
+                                        res.isAIMessage ? (
+                                            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground self-start shrink-0"><RiRobot2Fill size={24} /></div>
+                                        ) : (
+                                            <img src={avatarSrc} alt="avatar" className="w-10 h-10 rounded-full object-cover self-start shrink-0" />
+                                        )
+                                    )}
+                                    <div className={`max-w-lg p-3 rounded-xl ${isCurrentUser ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card border border-border rounded-bl-none'}`}>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="font-bold text-sm">{displayName}</span>
+                                            <span className="text-xs opacity-70">{formatDate(res.createdAt)}</span>
+                                        </div>
+                                        <p className="whitespace-pre-wrap break-words">{res.message}</p>
                                     </div>
-                                    <p className="whitespace-pre-wrap break-words">{res.message}</p>
-                                    {/* Add attachment display here if needed */}
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     {/* Agent Reply Form */}
                     <footer className="p-4 border-t border-border bg-card">
@@ -356,10 +358,10 @@ const TicketDetailsPanel = ({ ticket, agents, onBack }) => {
                     
                     <div className="border-t border-border pt-4">
                         <h4 className="font-bold mb-2">Ticket History</h4>
-                         <ul className="space-y-3 text-sm">
+                          <ul className="space-y-3 text-sm">
                             {ticket.history?.map((h, i) => (
                                 <li key={i}>
-                                    <p><span className="font-semibold">{h.actor.username}</span> changed {h.change.field} from <span className="font-mono bg-muted px-1 rounded">{h.change.from}</span> to <span className="font-mono bg-muted px-1 rounded">{h.change.to}</span>.</p>
+                                    <p><span className="font-semibold">{h.actor?.username || 'System'}</span> changed {h.change.field} from <span className="font-mono bg-muted px-1 rounded">{h.change.from}</span> to <span className="font-mono bg-muted px-1 rounded">{h.change.to}</span>.</p>
                                     <p className="text-xs text-custom">{formatDate(h.createdAt)}</p>
                                 </li>
                             ))}

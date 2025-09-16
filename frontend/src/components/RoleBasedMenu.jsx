@@ -36,6 +36,7 @@ const roleLinks = {
   ],
   customercare: [
     { name: 'Home', icon: <Home />, path: '/' },
+    { name: 'Profile', icon: <User />, path: '/profile' },
     { name: 'Dashboard', icon: <LayoutGrid />, path: '/customercare' },
     { name: 'Support Tickets', icon: <Briefcase />, path: '/customercare/support' },
     { name: 'User Management', icon: <Users />, path: '/customercare/users' },

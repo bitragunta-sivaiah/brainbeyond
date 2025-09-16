@@ -13,7 +13,7 @@ const adSchema = new mongoose.Schema({
   position: {
     type: String,
     required: true,
-    enum: ['homepage-top', 'homepage-side', 'course-side', 'article-bottom']
+    enum: ['homepage-top', 'homepage-side', 'course-side', 'article-bottom', 'enroll-course']
   },
   isActive: {
     type: Boolean,
