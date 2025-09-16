@@ -54,7 +54,7 @@ const SectionCard = ({ icon, title, children, className = "" }) => (
 
 const Loader = ({ text }) => (
     <div className="flex flex-col items-center justify-center p-8 text-center h-full">
-        <Loader className="w-12 h-12 text-primary animate-spin mb-4" />
+        <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
         <p className="text-muted-foreground font-semibold">{text}</p>
     </div>
 );
@@ -163,14 +163,14 @@ const SettingsModal = ({ isOpen, onClose, micVolume, isTestingMic, onToggleMicTe
                     <div className="space-y-4">
                         <p className="text-sm text-muted-foreground">The interview is paused. Test your devices below.</p>
                         <div className="space-y-2">
-                             <button onClick={onToggleMicTest} className={`w-full flex items-center justify-center gap-2 py-2 rounded-md transition ${isTestingMic ? 'bg-destructive/80' : 'bg-secondary'} text-secondary-foreground`}>
-                                 <Mic className="w-5 h-5" /> {isTestingMic ? 'Stop Test' : 'Test Mic'}
+                            <button onClick={onToggleMicTest} className={`w-full flex items-center justify-center gap-2 py-2 rounded-md transition ${isTestingMic ? 'bg-destructive/80' : 'bg-secondary'} text-secondary-foreground`}>
+                                <Mic className="w-5 h-5" /> {isTestingMic ? 'Stop Test' : 'Test Mic'}
                             </button>
                             <div className="w-full bg-input h-2 rounded-full overflow-hidden">
                                 <motion.div className="bg-primary h-full" animate={{ width: `${micVolume}%` }} transition={{ duration: 0.1 }} />
                             </div>
                         </div>
-                         <button onClick={onPlaySound} className="w-full flex items-center justify-center gap-2 bg-secondary py-2 rounded-md hover:bg-muted transition text-secondary-foreground">
+                        <button onClick={onPlaySound} className="w-full flex items-center justify-center gap-2 bg-secondary py-2 rounded-md hover:bg-muted transition text-secondary-foreground">
                             <Volume2 className="w-5 h-5" /> Play Test Sound
                         </button>
                         <button onClick={onClose} className="w-full mt-4 bg-primary text-primary-foreground font-bold py-3 rounded-lg">
@@ -187,7 +187,7 @@ const SettingsModal = ({ isOpen, onClose, micVolume, isTestingMic, onToggleMicTe
 // --- UI SECTIONS ---
 
 const IntroSection = ({ onNext }) => (
-     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-4 md:p-8 space-y-8">
+    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-4 md:p-8 space-y-8">
         <h2 className="font-display text-3xl md:text-4xl text-foreground">Ace Your SWE Interview</h2>
         <p className="text-md md:text-lg text-muted-foreground font-body">
             Welcome! This AI-powered mock interview is designed to simulate a real-world technical screening.
@@ -358,7 +358,7 @@ const SetupSection = ({ preparationId, onStart, status }) => {
             </div>
 
             <div className="w-full lg:w-1/3 space-y-4 pt-0 lg:pt-16">
-                 <div className="bg-card border border-border p-6 rounded-lg shadow-md space-y-5">
+                <div className="bg-card border border-border p-6 rounded-lg shadow-md space-y-5">
                     <h3 className="font-heading font-bold text-lg">Things to Know</h3>
                     {sideInfo.map((item, i) => (
                         <div key={i} className="flex items-start gap-4">
@@ -387,7 +387,7 @@ const SetupSection = ({ preparationId, onStart, status }) => {
 const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewConfig }) => {
     const { user } = useSelector(state => state.auth || {});
     const [timeLeft, setTimeLeft] = useState(INTERVIEW_DURATION_SECONDS);
-    const [transcript, setTranscript] = useState([{ speaker: 'ai', content: initialQuestion, timestamp: new Date() }]);
+    const [transcript, setTranscript] = useState([]); // Start with an empty transcript
     const [aiStatus, setAiStatus] = useState(AI_STATUS.IDLE);
     const hasSpokenInitialQuestion = useRef(false);
     const transcriptEndRef = useRef(null);
@@ -397,21 +397,31 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const { micVolume, isTestingMic, startMicTest, stopMicTest } = useMicTest();
 
-    const { interimTranscript, finalTranscript, listening, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
+    // CORRECTED: useSpeechRecognition hook
+    const {
+        transcript: interimTranscript,
+        finalTranscript,
+        listening,
+        resetTranscript,
+        browserSupportsSpeechRecognition
+    } = useSpeechRecognition();
 
     const speak = useCallback((text) => {
         const speakNow = () => {
+            if (!text || isPaused) return; // FIX: Prevent speaking if paused or no text
             window.speechSynthesis.cancel();
             setAiStatus(AI_STATUS.SPEAKING);
             const utterance = new SpeechSynthesisUtterance(text);
 
             utterance.onend = () => {
                 setAiStatus(AI_STATUS.LISTENING);
+                // CORRECTED: Start listening only after AI is done speaking
                 if (browserSupportsSpeechRecognition && !isPaused) {
                     SpeechRecognition.startListening({ continuous: false });
                 }
             };
-
+            
+            // FIX: Set voice to improve quality if available
             const voices = window.speechSynthesis.getVoices();
             const englishVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('David')));
             utterance.voice = englishVoice || voices.find(v => v.lang.startsWith('en'));
@@ -440,8 +450,11 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
         if (lastQuestion) {
             toast("Resuming interview...", { icon: '▶️' });
             speak(`Let's continue. The last question was: ${lastQuestion}`);
+        } else {
+            // Case where interview is resumed at the very start
+            speak(initialQuestion);
         }
-    }, [transcript, speak, stopMicTest]);
+    }, [transcript, speak, stopMicTest, initialQuestion]);
 
     const handleEndInterview = useCallback(async () => {
         // NEW: Check ref to ensure this only runs once
@@ -452,10 +465,18 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
         setAiStatus(AI_STATUS.IDLE);
         SpeechRecognition.stopListening();
         window.speechSynthesis.cancel();
-        const finalUtterance = finalTranscript || interimTranscript;
+        
+        // Use the most recent transcript, including any interim text, if finalTranscript is empty
+        const finalUtterance = finalTranscript || interimTranscript; 
         const finalTranscriptPayload = finalUtterance
             ? [...transcript, { speaker: 'user', content: finalUtterance, timestamp: new Date() }]
             : transcript;
+
+        // Immediately add final transcript to state
+        if(finalUtterance) {
+             setTranscript(prev => [...prev, { speaker: 'user', content: finalUtterance, timestamp: new Date() }]);
+        }
+
         await onEnd({ finalTranscript: finalTranscriptPayload });
     }, [transcript, onEnd, finalTranscript, interimTranscript]);
     
@@ -477,7 +498,7 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
 
     useEffect(() => {
         transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [transcript, aiStatus]);
+    }, [transcript, aiStatus, interimTranscript]); // FIX: Add interimTranscript to dependency to scroll on live caption update
 
     useEffect(() => {
         if (isPaused) return;
@@ -490,16 +511,19 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
         return () => clearInterval(timer);
     }, [timeLeft, handleEndInterview, isPaused]);
 
+    // CORRECTED: Main logic for handling speech recognition
     useEffect(() => {
-        if (!finalTranscript || isPaused) return;
+        if (!finalTranscript) return;
         setAiStatus(AI_STATUS.THINKING);
         const userEntry = { speaker: 'user', content: finalTranscript, timestamp: new Date() };
-        const newTranscriptForApi = [...transcript, userEntry];
-
-        setTranscript(newTranscriptForApi);
+        
+        // Immediately update transcript with user's final speech
+        setTranscript(prev => [...prev, userEntry]);
+        
+        // Reset the transcript recognition for the next turn
         resetTranscript();
 
-        onNextQuestion({ transcript: newTranscriptForApi })
+        onNextQuestion({ transcript: [...transcript, userEntry] }) // Pass the updated transcript to the API
             .then(nextQuestion => {
                 if (nextQuestion) {
                     const aiEntry = { speaker: 'ai', content: nextQuestion, timestamp: new Date() };
@@ -522,6 +546,8 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
         }
         if (!hasSpokenInitialQuestion.current && initialQuestion) {
             hasSpokenInitialQuestion.current = true;
+            // Add initial question to transcript immediately to show in UI
+            setTranscript([{ speaker: 'ai', content: initialQuestion, timestamp: new Date() }]);
             setTimeout(() => speak(initialQuestion), 1000);
         }
     }, [initialQuestion, speak, browserSupportsSpeechRecognition]);
@@ -562,14 +588,14 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
                         </div>
                     ))}
                     {aiStatus === AI_STATUS.THINKING && (
-                         <div className="flex gap-4 items-start justify-start">
+                        <div className="flex gap-4 items-start justify-start">
                             <Bot className="w-8 h-8 p-1.5 bg-primary text-primary-foreground rounded-full shrink-0" />
                             <div className="max-w-xl p-4 rounded-lg font-body bg-muted text-muted-foreground rounded-bl-none flex items-center gap-2">
                                 <span className="w-2 h-2 bg-primary rounded-full animate-pulse "/>
                                 <span className="w-2 h-2 bg-primary rounded-full animate-pulse delay-200"/>
                                 <span className="w-2 h-2 bg-primary rounded-full animate-pulse delay-400"/>
                             </div>
-                         </div>
+                        </div>
                     )}
                     <div ref={transcriptEndRef} />
                 </div>
@@ -584,9 +610,12 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
                 {/* FIX: Using new, more visible speaking indicator */}
                 {listening && <SpeakingIndicator />}
             </div>
-            {interimTranscript && (
+            {/* CORRECTED: Live Caption / Interim Transcript Display */}
+            {(aiStatus === AI_STATUS.LISTENING || (aiStatus === AI_STATUS.IDLE && interimTranscript)) && interimTranscript && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="absolute bottom-6 left-1/2 -translate-x-1/2 max-w-2xl w-full z-20">
-                    <p className="text-center p-3 bg-black/60 text-white rounded-lg text-lg font-medium">{interimTranscript}</p>
+                    <p className="text-center p-3 bg-black/60 text-white rounded-lg text-lg font-medium">
+                       <span className="inline-block animate-pulse mr-2">🎙️</span> {interimTranscript}
+                    </p>
                 </motion.div>
             )}
 
@@ -611,9 +640,9 @@ const InterviewSection = ({ initialQuestion, onEnd, onNextQuestion, interviewCon
                             <button aria-label="End Interview" onClick={handleEndInterview} className="p-3 bg-destructive rounded-full text-destructive-foreground hover:bg-destructive/90 transition"><PhoneOff className="w-5 h-5"/></button>
                         </Tooltip>
                     </div>
-                     <div className="hidden md:flex items-center gap-4">
+                    <div className="hidden md:flex items-center gap-4">
                         <Tooltip text="Live Captions Enabled">
-                           <Captions className="w-5 h-5 text-primary"/>
+                            <Captions className="w-5 h-5 text-primary"/>
                         </Tooltip>
                         <div className="flex items-center gap-2 text-green-500">
                             <Lock className="w-4 h-4" />
@@ -655,7 +684,7 @@ const FeedbackSection = ({ onRestart, status }) => {
             <div className="p-8 text-center">
                 <h3 className="text-2xl font-bold text-destructive">Feedback Error</h3>
                 <p className="text-muted-foreground mt-2">Could not load feedback report. Please try another interview.</p>
-                 <button onClick={onRestart} className="mt-6 bg-primary text-primary-foreground font-bold py-3 px-8 rounded-lg">
+                <button onClick={onRestart} className="mt-6 bg-primary text-primary-foreground font-bold py-3 px-8 rounded-lg">
                     Try Again
                 </button>
             </div>
@@ -708,20 +737,20 @@ const FeedbackSection = ({ onRestart, status }) => {
                 <div className="md:col-span-1 space-y-6">
                     <SectionCard icon={<Trophy className="w-6 h-6 text-primary" />} title="Overall Score">
                         <div className="w-40 h-40 md:w-48 md:h-48 mx-auto">
-                             <CircularProgressbar
+                            <CircularProgressbar
                                 value={aiFeedback.overallScore}
                                 text={`${aiFeedback.overallScore}%`}
                                 styles={circularProgressStyles}
                             />
                         </div>
                     </SectionCard>
-                     <SectionCard icon={<BarChart className="w-6 h-6 text-primary" />} title="Communication">
+                    <SectionCard icon={<BarChart className="w-6 h-6 text-primary" />} title="Communication">
                         <ul className="space-y-3 font-body">
                             {Object.entries(communicationAnalysis || {}).map(([key, value]) => (
-                                 <li key={key} className="flex justify-between items-center text-sm">
+                                <li key={key} className="flex justify-between items-center text-sm">
                                     <span className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
                                     <span className="font-bold text-foreground capitalize">{renderCommunicationValue(key, value)}</span>
-                                 </li>
+                                </li>
                             ))}
                         </ul>
                     </SectionCard>
@@ -729,9 +758,9 @@ const FeedbackSection = ({ onRestart, status }) => {
 
                 <div className="md:col-span-2 space-y-6">
                     <SectionCard icon={<Lightbulb className="w-6 h-6 text-primary" />} title="Performance Summary">
-                       <p className="text-muted-foreground font-body leading-relaxed">{aiFeedback.performanceSummary}</p>
+                        <p className="text-muted-foreground font-body leading-relaxed">{aiFeedback.performanceSummary}</p>
                     </SectionCard>
-                     <SectionCard icon={<BrainCircuit className="w-6 h-6 text-primary" />} title="Content Analysis">
+                    <SectionCard icon={<BrainCircuit className="w-6 h-6 text-primary" />} title="Content Analysis">
                         <div className="space-y-6">
                             {Object.entries(contentAnalysis || {}).filter(([key]) => key !== 'useOfKeywords').map(([key, value]) => (
                                 <div key={key}>
@@ -744,12 +773,12 @@ const FeedbackSection = ({ onRestart, status }) => {
                 </div>
 
                 {aiFeedback.suggestedAnswers && aiFeedback.suggestedAnswers.length > 0 && (
-                 <div className="md:col-span-3">
-                      <SectionCard icon={<CheckCircle className="w-6 h-6 text-green-500" />} title="Example of a Strong Answer">
-                        <h4 className="font-semibold text-card-foreground mb-4">For the question: <span className="italic">"{aiFeedback.suggestedAnswers[0].question}"</span></h4>
-                        <SuggestedAnswer answer={aiFeedback.suggestedAnswers[0].suggestedAnswer} />
-                      </SectionCard>
-                 </div>
+                    <div className="md:col-span-3">
+                        <SectionCard icon={<CheckCircle className="w-6 h-6 text-green-500" />} title="Example of a Strong Answer">
+                            <h4 className="font-semibold text-card-foreground mb-4">For the question: <span className="italic">"{aiFeedback.suggestedAnswers[0].question}"</span></h4>
+                            <SuggestedAnswer answer={aiFeedback.suggestedAnswers[0].suggestedAnswer} />
+                        </SectionCard>
+                    </div>
                 )}
             </div>
             <div className="text-center pt-6">
@@ -834,7 +863,7 @@ const SWEInterview = ({ onExitInterview }) => {
             case 'feedback':
                 return <FeedbackSection onRestart={() => setActiveSection('intro')} status={status}/>;
             case 'interview':
-                 return <InterviewSection
+                return <InterviewSection
                     initialQuestion={interviewSession.firstQuestion}
                     onEnd={handleEndInterview}
                     onNextQuestion={handleNextQuestion}
@@ -850,7 +879,7 @@ const SWEInterview = ({ onExitInterview }) => {
     }
 
     return (
-        <div className="  flex-wrap  bg-background text-foreground flex font-body">
+        <div className="flex bg-background text-foreground font-body min-h-screen">
             <aside className="w-full max-w-sm bg-card border-r border-border p-8 hidden lg:flex flex-col">
                 <div className="flex items-center justify-between mb-12">
                     <h1 className="font-display text-2xl text-primary">AI Mock Interview</h1>
@@ -863,31 +892,31 @@ const SWEInterview = ({ onExitInterview }) => {
                 <nav>
                     <ul className="space-y-2">
                         {sections.map((section, index) => (
-                             <li key={section.id} className=" ">
+                             <li key={section.id} className="relative">
                                 <button
                                     onClick={() => activeSection !== 'interview' && setActiveSection(section.id)}
                                     className={`w-full text-left flex items-center p-3 rounded-lg transition-colors ${activeSection === section.id ? 'bg-accent text-accent-foreground font-bold' : 'hover:bg-muted'}`}
                                     disabled={activeSection === 'interview' || (index > currentSectionIndex && status !== 'succeeded')}
                                 >
                                     <span className={`w-8 h-8 relative rounded-full flex items-center justify-center mr-4 font-bold ${currentSectionIndex >= index ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                                        {currentSectionIndex > index ? <MdVerified  className="w-5 h-5"/> : index + 1}
+                                        {currentSectionIndex > index ? <MdVerified className="w-5 h-5"/> : index + 1}
                                     </span>
                                     {section.title}
                                 </button>
-                                {/* {index < sections.length - 1 && (
-                                     <div className={`absolute  left-[50%] z-0 h-full w-0.5 mt-1 ${currentSectionIndex > index ? 'bg-primary' : 'bg-border'}`} style={{ top: '24px' }} />
-                                )} */}
+                                {index < sections.length - 1 && (
+                                     <div className={`absolute left-[19px] z-0 h-[22px] w-0.5 ${currentSectionIndex > index ? 'bg-primary' : 'bg-border'}`} style={{ top: '44px' }} />
+                                )}
                              </li>
                         ))}
                     </ul>
                 </nav>
             </aside>
             <main className="w-full lg:flex-1 overflow-y-auto custom-scrollbar">
-                 <AnimatePresence mode="wait">
-                      <div key={activeSection}>
-                          {renderActiveSection()}
-                      </div>
-                 </AnimatePresence>
+                <AnimatePresence mode="wait">
+                    <div key={activeSection}>
+                        {renderActiveSection()}
+                    </div>
+                </AnimatePresence>
             </main>
         </div>
     );
