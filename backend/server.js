@@ -34,6 +34,7 @@ import resumeRoutes from "./routes/resumeRouters.js";
 import atsRoutes from "./routes/atsResumeCheckerRouters.js";
 import roadmapsRoutes from "./routes/roadmapRoutes.js";
 import adminDataRouter from "./routes/adminDataRouter.js";
+import admincollaborationRouter from "./routes/collabRoutes/adminCollabRouter.js";
 
 // Load environment variables from a .env file
 dotenv.config();
@@ -180,6 +181,9 @@ app.use("/api/v1/resumes", resumeRoutes);
 app.use("/api/v1/ats", atsRoutes);
 app.use("/api/v1/roadmaps", roadmapsRoutes);
 app.use("/api/v1/admin/history", adminDataRouter);
+
+//  collaboration routes
+ app.use("/api/v1/admin/collab", admincollaborationRouter);
 
 // --- Error Handling Middleware ---
 app.use((err, req, res, next) => {

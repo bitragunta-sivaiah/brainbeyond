@@ -7,7 +7,7 @@ import Tesseract from 'tesseract.js';
 import { createCanvas } from 'canvas';
 import { protect } from '../middleware/authMiddleware.js';
 import ATSResumeChecker from '../models/atsResumeCheckerModel.js';
-import fetch from 'node-fetch'; // Required for making API calls in Node.js
+import fetch from 'node-fetch';
 
 // Initialize Express router
 const router = express.Router();
@@ -40,11 +40,6 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-<<<<<<< HEAD
-// Use a stable Gemini model version for production
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-=======
 // Gemini API Configuration
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
@@ -59,6 +54,7 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
  * @returns {Promise<Response>} The fetch response.
  */
 const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+    let lastError;
     for (let i = 0; i < retries; i++) {
         try {
             const response = await fetch(url, options);
@@ -75,7 +71,8 @@ const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
             throw new Error(`API call failed with status ${response.status}: ${errorText}`);
 
         } catch (error) {
-            console.warn(error.message);
+            console.warn(`Attempt ${i + 1} failed: ${error.message}`);
+            lastError = error;
             if (i < retries - 1) {
                 // Wait for the calculated delay before the next attempt
                 await new Promise(res => setTimeout(res, delay));
@@ -83,12 +80,14 @@ const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
                 delay *= 2; 
             } else {
                 // If all retries fail, re-throw the last error.
-                throw new Error(`Gemini API call failed after ${retries} attempts. Last error: ${error.message}`);
+                throw new Error(`Gemini API call failed after ${retries} attempts. Last error: ${lastError.message}`);
             }
         }
     }
+    // This line is unreachable due to the final throw, but kept for logical completeness
+    throw new Error(`Gemini API call failed after ${retries} attempts.`);
 };
->>>>>>> f32cfd89906a961a290c4e7a6fc1d5d37858bec2
+
 
 /**
  * **Robust Text Extraction Helper**
@@ -143,38 +142,6 @@ const extractTextFromFile = async (file) => {
     }
 };
 
-/**
- * A wrapper for the fetch API that includes automatic retries with exponential backoff.
- * This makes the API call resilient to temporary server errors (5xx) and rate limiting (429).
- * @param {string} url - The URL to fetch.
- * @param {object} options - The options for the fetch call (method, headers, body).
- * @param {number} retries - The maximum number of retries.
- * @returns {Promise<Response>} The fetch response object.
- */
-const fetchWithRetry = async (url, options, retries = 5) => {
-    let lastError;
-    for (let i = 0; i < retries; i++) {
-        try {
-            const response = await fetch(url, options);
-            if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
-                return response;
-            }
-            if (response.status === 429 || response.status >= 500) {
-                 console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying...`);
-                 lastError = new Error(`API call failed with status: ${response.status}`);
-                 const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                 await new Promise(resolve => setTimeout(resolve, delay));
-                 continue;
-            }
-        } catch (error) {
-            lastError = error;
-            console.warn(`Attempt ${i + 1} failed with network error: ${error.message}. Retrying...`);
-            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-    throw new Error(`API call failed after ${retries} attempts. Last error: ${lastError.message}`);
-};
 
 // Main POST route for the ATS resume check
 router.post('/', protect, upload.single('resume'), async (req, res) => {
@@ -212,11 +179,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             "Trained", "Transformed", "Upgraded", "Utilized", "Validated", "Verified", "Wrote"
         ];
         
-<<<<<<< HEAD
         // 3. Construct the prompt for Gemini
-=======
-        // 4. Construct the prompt for Gemini
->>>>>>> f32cfd89906a961a290c4e7a6fc1d5d37858bec2
         const prompt = `You are an extremely critical and precise ATS (Applicant Tracking System) and a highly experienced career coach. Your primary goal is to provide a 100% accurate and actionable analysis of a resume against a given job description. Provide the response as a perfectly valid JSON object. Do not include any text, notes, or explanations outside of the JSON object itself. Do not use markdown backticks.
 
         Job Description:
@@ -239,11 +202,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             - rating: Number from 0 to 10 for the section's quality, with 10 being perfect alignment with the job description.
         `;
 
-<<<<<<< HEAD
         // 4. Perform AI analysis using the robust fetchWithRetry function
-=======
-        // 5. Perform AI analysis using the robust fetch call with retries
->>>>>>> f32cfd89906a961a290c4e7a6fc1d5d37858bec2
         const geminiResponse = await fetchWithRetry(GEMINI_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -252,19 +211,11 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             })
         }, 5); // Attempt API call up to 5 times
 
-<<<<<<< HEAD
-        if (!geminiResponse.ok) {
-            const errorText = await geminiResponse.text();
-            throw new Error(`Gemini API call failed permanently with status: ${geminiResponse.status}. Details: ${errorText}`);
-        }
-
-=======
->>>>>>> f32cfd89906a961a290c4e7a6fc1d5d37858bec2
         const geminiResult = await geminiResponse.json();
 
         if (!geminiResult.candidates || !geminiResult.candidates[0]?.content?.parts[0]?.text) {
-             console.error("Invalid Gemini response structure:", geminiResult);
-             throw new Error('Received an invalid or empty response from the AI model.');
+            console.error("Invalid Gemini response structure:", geminiResult);
+            throw new Error('Received an invalid or empty response from the AI model.');
         }
         let responseText = geminiResult.candidates[0].content.parts[0].text;
         responseText = responseText.replace(/```json|```/g, '').trim();
@@ -277,7 +228,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
             throw new Error('Failed to parse the AI response. It may not be valid JSON.');
         }
 
-        // 6. Save the analysis to your database
+        // 5. Save the analysis to your database
         const newAnalysis = new ATSResumeChecker({
             userId: req.user._id,
             resumeFile: {
@@ -301,7 +252,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
 
         await newAnalysis.save();
 
-        // 7. Respond to the client with the full analysis
+        // 6. Respond to the client with the full analysis
         res.status(200).json({
             message: 'Resume analyzed successfully.',
             data: newAnalysis,
@@ -313,7 +264,7 @@ router.post('/', protect, upload.single('resume'), async (req, res) => {
         
         // Provide a more user-friendly message for overload errors
         if (error.message.includes('503') || error.message.includes('overloaded')) {
-             return res.status(503).json({
+            return res.status(503).json({
                 message: 'The analysis service is currently under high demand. Please try again in a few moments.',
                 error: error.message
             });

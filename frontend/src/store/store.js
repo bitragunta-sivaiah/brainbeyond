@@ -29,6 +29,8 @@ import roadmapsReducer from './redux/learningRoadmapSlice'
 // --- 1. Import the new admin history reducer ---
 import adminHistoryReducer from './redux/adminHistorySlice';
 
+import adminCollabReducer from "./redux/collab/adminCollabSlice";
+
 export const store = configureStore({
   reducer: {
     auth: userReducer,
@@ -61,6 +63,9 @@ export const store = configureStore({
     roadmaps: roadmapsReducer,
     // --- 2. Add the reducer to the store ---
     adminHistory: adminHistoryReducer,
+
+   // collaboration slices 
+     adminCollab: adminCollabReducer
   },
 });
 

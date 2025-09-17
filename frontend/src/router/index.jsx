@@ -23,6 +23,7 @@ import AdminInterviewQuestions from "@/pages/AdminInterviewQuestions";
  
 import AllOrderManager from "@/pages/AllOrderManager";
 import AtsScoreChecker from "@/pages/AtsScoreChecker";
+import AdminCollabManager from "@/pages/collab/AdminCollabManager";
 import CreateResumePage from "@/pages/CreateResumePage";
 import CustomerCareContactManager from "@/pages/customerCare/CustomerCareContactManager";
 import CustomerCareSupport from "@/pages/CustomerCareSupport";
@@ -179,6 +180,7 @@ export const router = createBrowserRouter([
                     { path: 'contact', element: <AdminContactManager /> },
                     { path: 'interview-questions', element: <AdminInterviewQuestions /> },
                     { path: 'history-access', element: <AdminDataHistory /> },
+                    { path: 'collab-access', element: <AdminCollabManager /> },
                 ],
             },
 

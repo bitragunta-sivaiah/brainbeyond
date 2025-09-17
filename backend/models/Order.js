@@ -9,7 +9,7 @@ const orderSchema = new mongoose.Schema({
   items: [{
     itemType: {
       type: String,
-      enum: ['Course', 'Subscription'], // Use PascalCase for consistency with model names
+      enum: ['Course', 'Subscription','collab_subscriptionplan'], // Use PascalCase for consistency with model names
       required: [true, 'Item type is required'],
     },
     itemId: {

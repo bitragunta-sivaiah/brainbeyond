@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  fetchCourseDetails,
   fetchCourseProgress,
-  markLessonComplete,
-  markLessonIncomplete,
+  completeLesson,
+  incompleteLesson,
   submitQuiz,
   addDoubt,
   submitCodingProblem,
+  runCode,
 } from "../store/redux/studentCourseSlice";
 import { issueCertificate } from "../store/redux/courseCertificatesSlice";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,6 +28,8 @@ import {
   Info,
   BadgeCheck,
   Award,
+  Terminal,
+  Lock,
 } from "lucide-react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
@@ -62,9 +64,15 @@ const CourseContent = () => {
   const { slug } = useParams();
   const dispatch = useDispatch();
 
-  const { selectedCourse, detailsStatus, actionStatus } = useSelector((state) => state.studentCourses);
-  const { certificates, loading: certLoading } = useSelector((state) => state.certificates);
-  const { details: courseDetails, progress: courseProgress } = selectedCourse;
+  const {
+    courseProgress,
+    status: detailsStatus,
+  } = useSelector((state) => state.studentCourses);
+
+  const {
+    certificates,
+    loading: certLoading,
+  } = useSelector((state) => state.certificates);
 
   const [activeChapter, setActiveChapter] = useState(null);
   const [activeLesson, setActiveLesson] = useState(null);
@@ -73,30 +81,46 @@ const CourseContent = () => {
   const [quizAnswers, setQuizAnswers] = useState({});
   const [quizResult, setQuizResult] = useState(null);
   const [codingProblemCode, setCodingProblemCode] = useState("");
-  const [codingOutput, setCodingOutput] = useState(null);
+  const [runCodeOutput, setRunCodeOutput] = useState(null);
+  const [submissionResult, setSubmissionResult] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLessonActionLoading, setIsLessonActionLoading] = useState(false);
+
+  // We get the course data from courseProgress now
+  const courseData = courseProgress;
 
   const existingCertificate = useMemo(() => {
-    return certificates?.find(cert => cert.course?._id === courseDetails?._id);
-  }, [certificates, courseDetails]);
+    return certificates?.find((cert) => cert.course?._id === courseData?._id);
+  }, [certificates, courseData]);
 
   useEffect(() => {
     if (slug) {
-      dispatch(fetchCourseDetails(slug));
       dispatch(fetchCourseProgress(slug));
     }
   }, [dispatch, slug]);
 
   useEffect(() => {
-    if (detailsStatus === "succeeded" && courseDetails) {
-      const firstChapter = courseDetails.chapters[0];
+    if (detailsStatus === "succeeded" && courseData) {
+      const firstChapter = courseData.chapters[0];
       if (firstChapter && firstChapter.lessons[0]) {
         setActiveChapter(firstChapter._id);
         setActiveLesson(firstChapter.lessons[0]);
       }
     }
-  }, [detailsStatus, courseDetails]);
+  }, [detailsStatus, courseData]);
 
-  if (detailsStatus === "loading" || !courseDetails) {
+  useEffect(() => {
+    if (activeLesson?.type === "codingProblem") {
+      const starterCode = activeLesson.content?.codingProblem?.starterCode || "";
+      setCodingProblemCode(starterCode);
+    }
+    setQuizAnswers({});
+    setQuizResult(null);
+    setRunCodeOutput(null);
+    setSubmissionResult(null);
+  }, [activeLesson]);
+
+  if (detailsStatus === "loading" || !courseData) {
     return (
       <div className="flex justify-center items-center h-screen text-lg text-custom">
         <Loader2 className="animate-spin mr-2" /> Loading course content...
@@ -104,33 +128,36 @@ const CourseContent = () => {
     );
   }
 
-  // Improved error handling for non-existent or unenrolled courses
-  if (detailsStatus === "failed" || !courseDetails?.hasAccess) {
+  // The backend already handles access denial, so this check is simpler.
+  // The fetchCourseProgress endpoint will return a 403 or 404.
+  if (detailsStatus === "failed") {
     return (
       <div className="flex flex-col justify-center items-center h-screen text-lg text-custom px-4 text-center">
         <XCircle size={64} className="text-destructive mb-4" />
-        <h1 className="text-3xl font-bold mb-4">Course Not Found or Not Enrolled</h1>
-        <p>It looks like this course doesn't exist or you haven't enrolled yet. Please check your dashboard.</p>
+        <h1 className="text-3xl font-bold mb-4">Access Denied</h1>
+        <p>
+          It looks like you don't have access to this course. Please enroll to view its content.
+        </p>
       </div>
     );
   }
 
   const fullActiveLesson = activeLesson
-    ? courseDetails.chapters
+    ? courseData.chapters
         .flatMap((chapter) => chapter.lessons)
         .find((lesson) => lesson._id === activeLesson._id)
     : null;
 
   const isLessonCompleted = (lessonId) =>
-    courseProgress?.completedLessons?.some(cl => cl.lesson === lessonId) || false;
+    courseData?.completedLessons?.some((cl) => cl === lessonId) || false;
 
   const isChapterCompleted = (chapter) => {
-    if (!courseProgress) return false;
-    const lessonIdsInChapter = chapter.lessons.map(lesson => lesson._id);
-    return lessonIdsInChapter.length > 0 && lessonIdsInChapter.every(lessonId => isLessonCompleted(lessonId));
+    if (!courseData) return false;
+    const lessonIdsInChapter = chapter.lessons.map((lesson) => lesson._id);
+    return lessonIdsInChapter.length > 0 && lessonIdsInChapter.every((lessonId) => isLessonCompleted(lessonId));
   };
 
-  const progressPercentage = courseProgress?.overallProgress || 0;
+  const progressPercentage = courseData?.progress || 0;
   const isCourseComplete = progressPercentage === 100;
 
   const handleToggleChapter = (chapterId) => {
@@ -139,86 +166,137 @@ const CourseContent = () => {
 
   const handleLessonClick = (lesson) => {
     setActiveLesson(lesson);
-    setQuizAnswers({}); // Reset quiz answers on lesson change
-    setQuizResult(null);
-    setCodingProblemCode(lesson.type === "codingProblem" && lesson.content?.codingProblem?.starterCode ? lesson.content.codingProblem.starterCode : ""); // Clear code editor and set starter code
-    setCodingOutput(null);
   };
 
   const handleToggleComplete = async (lessonId) => {
-    if (isLessonCompleted(lessonId)) {
-      await dispatch(markLessonIncomplete(lessonId));
-    } else {
-      await dispatch(markLessonComplete(lessonId));
+    setIsLessonActionLoading(true);
+    try {
+      if (isLessonCompleted(lessonId)) {
+        await dispatch(incompleteLesson(lessonId)).unwrap();
+      } else {
+        await dispatch(completeLesson(lessonId)).unwrap();
+      }
+      dispatch(fetchCourseProgress(slug));
+    } catch (error) {
+      console.error("Failed to toggle lesson completion:", error);
+    } finally {
+      setIsLessonActionLoading(false);
     }
-    // Re-fetch progress after action to ensure UI is up-to-date
-    dispatch(fetchCourseProgress(slug));
   };
 
   const handleAddDoubt = async () => {
     if (doubtQuestion.trim()) {
-      await dispatch(addDoubt({ lessonId: activeLesson._id, question: doubtQuestion }));
-      setDoubtQuestion("");
-      setShowDoubtInput(false);
+      setIsLessonActionLoading(true);
+      try {
+        await dispatch(addDoubt({ lessonId: activeLesson._id, question: doubtQuestion })).unwrap();
+        setDoubtQuestion("");
+        setShowDoubtInput(false);
+      } catch (error) {
+        console.error("Failed to add doubt:", error);
+      } finally {
+        setIsLessonActionLoading(false);
+      }
     }
   };
 
-  const handleQuizAnswer = (questionId, value) => {
-    setQuizAnswers((prev) => ({
-      ...prev,
-      [questionId]: value,
-    }));
+  const handleQuizAnswer = (questionId, value, type) => {
+    setQuizAnswers((prev) => {
+      const newAnswers = { ...prev };
+      if (type === 'multiple-choice') {
+        const currentAnswers = newAnswers[questionId] || [];
+        if (currentAnswers.includes(value)) {
+          newAnswers[questionId] = currentAnswers.filter((v) => v !== value);
+        } else {
+          newAnswers[questionId] = [...currentAnswers, value];
+        }
+      } else {
+        newAnswers[questionId] = value;
+      }
+      return newAnswers;
+    });
   };
 
   const handleQuizSubmit = async () => {
-    if (actionStatus === "loading") return;
-    const answers = Object.entries(quizAnswers).map(([questionId, value]) => ({
-      questionId,
-      selectedOptions: Array.isArray(value) ? value : [value],
-    }));
+    setIsSubmitting(true);
+    const answers = Object.entries(quizAnswers).map(([questionId, value]) => {
+      const question = fullActiveLesson.content.quiz.questions.find(q => q._id === questionId);
+      const isTextAnswer = ['short-answer', 'fill-in-the-blank'].includes(question.questionType);
+      
+      return {
+        questionId,
+        answeredText: isTextAnswer ? value : undefined,
+        selectedOptions: isTextAnswer ? [] : (Array.isArray(value) ? value : [value]),
+      };
+    });
+
     try {
       const result = await dispatch(submitQuiz({ lessonId: activeLesson._id, answers })).unwrap();
       setQuizResult(result);
       dispatch(fetchCourseProgress(slug));
     } catch (error) {
-      // Handle submission errors
       console.error("Quiz submission failed:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleSubmitCode = async () => {
-    if (actionStatus === "loading") return;
-    setCodingOutput({
+    setIsSubmitting(true);
+    setSubmissionResult({
       status: "Running...",
       output: null,
       error: null,
     });
     try {
-      const response = await dispatch(submitCodingProblem({
-        lessonId: activeLesson._id,
-        code: codingProblemCode,
-        language: fullActiveLesson.content.codingProblem.allowedLanguages[0] || "javascript",
-      })).unwrap();
-      setCodingOutput({
-        status: "Submission Accepted! ✅",
-        output: response.message,
-        error: null,
-      });
-      // A successful submission should mark the lesson complete
-      dispatch(markLessonComplete(activeLesson._id));
+      const response = await dispatch(
+        submitCodingProblem({
+          lessonId: activeLesson._id,
+          code: codingProblemCode,
+          language: fullActiveLesson.content.codingProblem.allowedLanguages[0] || "javascript",
+        })
+      ).unwrap();
+
+      setSubmissionResult(response);
       dispatch(fetchCourseProgress(slug));
     } catch (error) {
-      setCodingOutput({
-        status: "Error",
-        output: null,
-        error: error.message,
+      setSubmissionResult({
+        isPassed: false,
+        score: 0,
+        status: "error",
+        message: error.message || "An error occurred during submission.",
       });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRunCode = async () => {
+    setIsSubmitting(true);
+    setRunCodeOutput({ status: "running" });
+    try {
+      const response = await dispatch(
+        runCode({
+          lessonId: activeLesson._id,
+          code: codingProblemCode,
+          language: fullActiveLesson.content.codingProblem.allowedLanguages[0] || "javascript",
+        })
+      ).unwrap();
+      setRunCodeOutput({ status: "success", output: response.output, message: response.message });
+    } catch (error) {
+      setRunCodeOutput({ status: "error", output: error.message });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleIssueCertificate = async () => {
     if (certLoading) return;
-    await dispatch(issueCertificate({ courseId: courseDetails._id }));
+    try {
+      await dispatch(issueCertificate({ courseId: courseData._id })).unwrap();
+      dispatch(fetchCourseProgress(slug));
+    } catch (error) {
+      console.error("Failed to issue certificate:", error);
+    }
   };
 
   const renderCertificateButton = () => {
@@ -276,36 +354,29 @@ const CourseContent = () => {
 
   const renderQuizQuestion = (q, index) => {
     const isCompleted = isLessonCompleted(fullActiveLesson._id);
+    const selectedAnswer = quizAnswers[q._id];
 
-    // Render based on question type
     switch (q.questionType) {
       case 'short-answer':
-        return (
-          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
-            <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
-            <input
-              type="text"
-              value={quizAnswers[q._id] || ''}
-              onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
-              className="w-full p-2 rounded-md border border-input bg-input focus:outline-none focus:ring-2 focus:ring-primary"
-              disabled={isCompleted}
-            />
-          </div>
-        );
       case 'fill-in-the-blank':
-        const parts = q.questionText.split('____');
-        return (
-          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
-            <p className="font-semibold text-lg mb-4 flex items-center flex-wrap">
-              {index + 1}. {parts[0]}
+        const questionText = q.questionText.split('____').map((part, partIndex) => (
+          <React.Fragment key={partIndex}>
+            {part}
+            {partIndex < q.questionText.split('____').length - 1 && (
               <input
                 type="text"
-                value={quizAnswers[q._id] || ''}
-                onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
+                value={selectedAnswer || ''}
+                onChange={(e) => handleQuizAnswer(q._id, e.target.value, q.questionType)}
                 className="mx-2 w-auto p-1.5 rounded-md border-b border-input bg-input focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={isCompleted}
               />
-              {parts.slice(1).join('____')}
+            )}
+          </React.Fragment>
+        ));
+        return (
+          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
+            <p className="font-semibold text-lg mb-4 flex items-center flex-wrap">
+              {index + 1}. {questionText}
             </p>
           </div>
         );
@@ -319,8 +390,8 @@ const CourseContent = () => {
                   type="radio"
                   name={`question-${q._id}`}
                   value="True"
-                  onChange={() => handleQuizAnswer(q._id, "True")}
-                  checked={quizAnswers[q._id] === "True"}
+                  onChange={() => handleQuizAnswer(q._id, "True", q.questionType)}
+                  checked={selectedAnswer === "True"}
                   className="accent-primary"
                   disabled={isCompleted}
                 />
@@ -331,8 +402,8 @@ const CourseContent = () => {
                   type="radio"
                   name={`question-${q._id}`}
                   value="False"
-                  onChange={() => handleQuizAnswer(q._id, "False")}
-                  checked={quizAnswers[q._id] === "False"}
+                  onChange={() => handleQuizAnswer(q._id, "False", q.questionType)}
+                  checked={selectedAnswer === "False"}
                   className="accent-primary"
                   disabled={isCompleted}
                 />
@@ -341,7 +412,7 @@ const CourseContent = () => {
             </div>
           </div>
         );
-      default: // Handles 'single-choice' and 'multiple-choice'
+      case 'multiple-choice':
         return (
           <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
             <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
@@ -352,11 +423,37 @@ const CourseContent = () => {
                   className="flex items-center space-x-2 cursor-pointer p-2 rounded-md transition-colors hover:bg-muted"
                 >
                   <input
-                    type="radio" // Use radio for single-choice/multiple-choice based on model logic
+                    type="checkbox"
                     name={`question-${q._id}`}
                     value={option.optionText}
-                    onChange={(e) => handleQuizAnswer(q._id, e.target.value)}
-                    checked={quizAnswers[q._id] === option.optionText}
+                    onChange={(e) => handleQuizAnswer(q._id, e.target.value, q.questionType)}
+                    checked={Array.isArray(selectedAnswer) && selectedAnswer.includes(option.optionText)}
+                    className="accent-primary"
+                    disabled={isCompleted}
+                  />
+                  <span>{option.optionText}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      case 'single-choice':
+      default:
+        return (
+          <div key={q._id} className="p-4 border border-border rounded-lg bg-card">
+            <p className="font-semibold text-lg mb-4">{index + 1}. {q.questionText}</p>
+            <div className="space-y-2">
+              {q.options.map((option, optIndex) => (
+                <label
+                  key={optIndex}
+                  className="flex items-center space-x-2 cursor-pointer p-2 rounded-md transition-colors hover:bg-muted"
+                >
+                  <input
+                    type="radio"
+                    name={`question-${q._id}`}
+                    value={option.optionText}
+                    onChange={(e) => handleQuizAnswer(q._id, e.target.value, q.questionType)}
+                    checked={selectedAnswer === option.optionText}
                     className="accent-primary"
                     disabled={isCompleted}
                   />
@@ -377,15 +474,31 @@ const CourseContent = () => {
         </div>
       );
     }
+
+    // Check if the lesson content exists or if it's a locked lesson
+    if (!fullActiveLesson.content) {
+      // This is a locked lesson
+      return (
+        <div className="flex flex-col justify-center items-center h-full text-custom px-4 text-center">
+          <Lock size={64} className="text-muted-foreground mb-4" />
+          <h1 className="text-3xl font-bold mb-2">Lesson Locked</h1>
+          <p className="text-muted-foreground">
+            This lesson is part of the premium course content. To unlock it, please purchase the full course or get a subscription.
+          </p>
+        </div>
+      );
+    }
+
     switch (fullActiveLesson.type) {
       case "video":
+        const videoContent = fullActiveLesson.content.video;
         return (
           <div className="flex flex-col h-full">
             <h2 className="text-2xl font-bold mb-4">{fullActiveLesson.title}</h2>
             <p className="text-muted-foreground mb-4">{fullActiveLesson.description}</p>
             <div className="relative w-full aspect-video rounded-lg overflow-hidden mb-6">
               <iframe
-                src={fullActiveLesson.content.video.videoUrl}
+                src={videoContent.videoUrl}
                 title={fullActiveLesson.title}
                 frameBorder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -396,18 +509,26 @@ const CourseContent = () => {
           </div>
         );
       case "article":
+        const articleContent = fullActiveLesson.content.article;
         return (
           <div>
             <h2 className="text-2xl font-bold mb-4">{fullActiveLesson.title}</h2>
             <p className="text-muted-foreground mb-6">{fullActiveLesson.description}</p>
             <div
               className="prose dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: fullActiveLesson.content.article.content }}
+              dangerouslySetInnerHTML={{ __html: articleContent.content }}
             ></div>
           </div>
         );
       case "quiz":
-        const quiz = fullActiveLesson.content.quiz;
+        const quizContent = fullActiveLesson.content.quiz;
+        if (!quizContent || !quizContent.questions) {
+          return (
+            <div className="flex justify-center items-center h-full text-custom">
+              Quiz content not available.
+            </div>
+          );
+        }
         if (!quizResult) {
           return (
             <motion.div
@@ -421,11 +542,11 @@ const CourseContent = () => {
                 <Info size={24} className="text-accent-foreground flex-shrink-0 mt-1" />
                 <div>
                   <h3 className="text-lg font-semibold text-accent-foreground">Quiz Instructions</h3>
-                  <p className="text-accent-foreground/90 mt-1">{quiz.quizInstructions}</p>
+                  <p className="text-accent-foreground/90 mt-1">{quizContent.quizInstructions}</p>
                   <ul className="mt-2 text-sm text-accent-foreground/80 space-y-1 list-disc list-inside">
-                    <li>Total questions: {quiz.questions.length}</li>
-                    <li>Passing score: {quiz.passScore}%</li>
-                    <li>Attempts allowed: {quiz.attemptsAllowed === 0 ? "Unlimited" : quiz.attemptsAllowed}</li>
+                    <li>Total questions: {quizContent.questions.length}</li>
+                    <li>Passing score: {quizContent.passScore}%</li>
+                    <li>Attempts allowed: {quizContent.attemptsAllowed === 0 ? "Unlimited" : quizContent.attemptsAllowed}</li>
                   </ul>
                 </div>
               </div>
@@ -445,16 +566,16 @@ const CourseContent = () => {
           return (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold mb-4">{fullActiveLesson.title}</h2>
-              {quiz.questions.map((q, index) => renderQuizQuestion(q, index))}
+              {quizContent.questions.map((q, index) => renderQuizQuestion(q, index))}
               <div className="flex justify-end">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={handleQuizSubmit}
-                  disabled={actionStatus === "loading"}
+                  disabled={isSubmitting}
                   className="bg-primary text-primary-foreground font-semibold px-6 py-3 rounded-full shadow-lg transition-colors"
                 >
-                  {actionStatus === "loading" ? <Loader2 className="animate-spin" /> : "Submit Quiz"}
+                  {isSubmitting ? <Loader2 className="animate-spin" /> : "Submit Quiz"}
                 </motion.button>
               </div>
             </div>
@@ -492,7 +613,7 @@ const CourseContent = () => {
             <div className="p-6 bg-muted rounded-lg shadow-inner flex items-start space-x-4">
               <Lightbulb size={24} className="text-primary flex-shrink-0 mt-1" />
               <div>
-                <h3 className="text-lg font-semibold text-foreground">Tips & Tricks</h3>
+                <h3 className="text-lg font-semibold text-foreground">Problem Description</h3>
                 <p className="text-muted-foreground mt-1">{codingProblem.description}</p>
                 <p className="mt-2 text-sm text-custom">Difficulty: <span className="capitalize font-semibold text-foreground">{codingProblem.difficulty}</span></p>
               </div>
@@ -501,7 +622,7 @@ const CourseContent = () => {
               <h3 className="font-semibold text-lg mb-2">Code Editor</h3>
               <div className="w-full">
                 <CodeMirror
-                  value={codingProblemCode} // Use component state for code
+                  value={codingProblemCode}
                   height="400px"
                   theme="dark"
                   extensions={[getLanguageExtension(codingProblem.allowedLanguages[0] || "javascript")]}
@@ -509,31 +630,59 @@ const CourseContent = () => {
                 />
               </div>
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end space-x-4">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleRunCode}
+                disabled={isSubmitting}
+                className="flex items-center bg-secondary text-secondary-foreground font-semibold px-6 py-3 rounded-full shadow-lg transition-colors"
+              >
+                {isSubmitting ? <Loader2 className="animate-spin" /> : <Terminal size={20} className="mr-2" />}
+                Run Code
+              </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleSubmitCode}
-                disabled={actionStatus === "loading"}
-                className="bg-primary text-primary-foreground font-semibold px-6 py-3 rounded-full shadow-lg transition-colors"
+                disabled={isSubmitting}
+                className="flex items-center bg-primary text-primary-foreground font-semibold px-6 py-3 rounded-full shadow-lg transition-colors"
               >
-                {actionStatus === "loading" ? <Loader2 className="animate-spin" /> : "Run Code"}
+                {isSubmitting ? <Loader2 className="animate-spin" /> : <Code size={20} className="mr-2" />}
+                Submit
               </motion.button>
             </div>
             <AnimatePresence>
-              {codingOutput && (
+              {runCodeOutput && (
                 <motion.div
+                  key="run-output"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
                   transition={{ duration: 0.3 }}
                   className="bg-card p-4 rounded-lg border border-border"
                 >
-                  <h3 className="font-semibold text-lg mb-2">Output</h3>
+                  <h3 className="font-semibold text-lg mb-2">Code Run Output</h3>
                   <div className="text-sm font-mono whitespace-pre-wrap">
-                    <p className={`font-semibold ${codingOutput.error ? "text-destructive" : "text-primary"}`}>Status: {codingOutput.status}</p>
-                    {codingOutput.output && <p>Output: {codingOutput.output}</p>}
-                    {codingOutput.error && <p>Error: {codingOutput.error}</p>}
+                    <p className={`font-semibold ${runCodeOutput.status === "error" ? "text-destructive" : "text-primary"}`}>Status: {runCodeOutput.status}</p>
+                    {runCodeOutput.output && <p>Output: {runCodeOutput.output}</p>}
+                  </div>
+                </motion.div>
+              )}
+              {submissionResult && (
+                <motion.div
+                  key="submission-output"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-card p-4 rounded-lg border border-border"
+                >
+                  <h3 className="font-semibold text-lg mb-2">Submission Result</h3>
+                  <div className="text-sm font-mono whitespace-pre-wrap">
+                    <p className={`font-semibold ${submissionResult.isPassed ? "text-green-600" : "text-destructive"}`}>Status: {submissionResult.isPassed ? "Correct" : "Incorrect"}</p>
+                    {submissionResult.message && <p>Message: {submissionResult.message}</p>}
+                    {submissionResult.score !== undefined && <p>Score: {submissionResult.score}</p>}
                   </div>
                 </motion.div>
               )}
@@ -548,6 +697,7 @@ const CourseContent = () => {
         );
     }
   };
+
   return (
     <div className="flex flex-col md:flex-row h-screen bg-background text-foreground overflow-hidden">
       {/* Left Sidebar */}
@@ -558,7 +708,7 @@ const CourseContent = () => {
         className="w-full md:w-1/4 min-w-[300px] bg-card border-r border-border p-6 flex flex-col custom-scrollbar overflow-y-auto"
       >
         <div className="mb-8">
-          <h2 className="text-xl font-bold mb-2">{courseDetails.title}</h2>
+          <h2 className="text-xl font-bold mb-2">{courseData?.title}</h2>
           <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
             <motion.div
               className="h-full bg-primary"
@@ -574,10 +724,10 @@ const CourseContent = () => {
             </div>
           )}
         </div>
-
+        
         {/* Chapters and Lessons */}
         <div className="space-y-4 flex-1">
-          {courseDetails.chapters.map((chapter) => (
+          {courseData?.chapters?.map((chapter) => (
             <div key={chapter._id} className="border-b border-border pb-4">
               <button
                 onClick={() => handleToggleChapter(chapter._id)}
@@ -596,7 +746,7 @@ const CourseContent = () => {
                   <ChevronDown size={20} />
                 </motion.div>
               </button>
-
+              
               <AnimatePresence>
                 {activeChapter === chapter._id && (
                   <motion.ul
@@ -628,7 +778,7 @@ const CourseContent = () => {
           ))}
         </div>
       </motion.div>
-
+      
       {/* Right Content Area */}
       <div className="flex-1 flex flex-col bg-background p-8 custom-scrollbar overflow-y-auto">
         <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 mb-6 border-b border-border">
@@ -639,9 +789,10 @@ const CourseContent = () => {
               whileTap={{ scale: 0.95 }}
               onClick={() => handleToggleComplete(activeLesson._id)}
               disabled={
-                // Disable button for quizzes/coding problems until completed
+                (!fullActiveLesson?.isFree && !fullActiveLesson?.content) ||
                 (activeLesson.type === 'quiz' && !isLessonCompleted(activeLesson._id)) ||
-                (activeLesson.type === 'codingProblem' && !isLessonCompleted(activeLesson._id))
+                (activeLesson.type === 'codingProblem' && !isLessonCompleted(activeLesson._id)) ||
+                isLessonActionLoading
               }
               className={`flex items-center px-4 py-2 rounded-full font-semibold transition-colors shrink-0 ${
                 isLessonCompleted(activeLesson._id)
@@ -649,15 +800,15 @@ const CourseContent = () => {
                   : "bg-primary text-primary-foreground"
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              {isLessonCompleted(activeLesson._id) ? "Mark as Incomplete" : "Mark as Complete"}
+              {isLessonActionLoading ? <Loader2 className="animate-spin" /> : isLessonCompleted(activeLesson._id) ? "Mark as Incomplete" : "Mark as Complete"}
               <CheckCircle size={20} className="ml-2" />
             </motion.button>
           )}
         </header>
-
+        
         {/* Lesson Content */}
         <main className="flex-1">{renderLessonContent()}</main>
-
+        
         {/* Doubt and Resource Section */}
         {activeLesson && (
           <div className="mt-8 pt-6 border-t border-border space-y-4">
@@ -682,7 +833,7 @@ const CourseContent = () => {
                 </ul>
               </div>
             )}
-
+            
             {/* Doubts */}
             <div className="bg-card p-4 rounded-lg border border-border">
               <h4 className="font-semibold text-lg mb-2">Ask a Question</h4>
@@ -717,9 +868,9 @@ const CourseContent = () => {
                         whileTap={{ scale: 0.95 }}
                         onClick={handleAddDoubt}
                         className="bg-primary text-primary-foreground px-4 py-2 rounded-full font-semibold"
-                        disabled={actionStatus === "loading"}
+                        disabled={isLessonActionLoading}
                       >
-                        {actionStatus === "loading" ? <Loader2 className="animate-spin" /> : <Send size={18} />}
+                        {isLessonActionLoading ? <Loader2 className="animate-spin" /> : <Send size={18} />}
                       </motion.button>
                     </div>
                   </motion.div>

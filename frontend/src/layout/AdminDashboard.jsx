@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { MdMeetingRoom } from 'react-icons/md';
 import { SiAdminer } from 'react-icons/si';
-
+import { FcCollaboration } from "react-icons/fc";
 // Sidebar navigation links data, now organized into categories with colors
 const navCategories = [
   {
@@ -41,6 +41,7 @@ const navCategories = [
     links: [
       { name: 'Dashboard', path: '/admin/dashboard', icon: <Grid size={20} /> },
       { name: 'Admin Data Access', path: '/admin/history-access', icon: <SiAdminer size={20} /> },
+      { name: 'Admin Collab', path: '/admin/collab-access', icon: <FcCollaboration size={20} /> },
     ],
   },
   {

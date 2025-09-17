@@ -267,6 +267,98 @@ const customerCareSchema = new mongoose.Schema({
     currentAssignments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SupportTicket' }]
 });
 
+
+/**
+ * @description Schema for a job candidate.
+ */
+const candidateSchema = new mongoose.Schema({
+    resumeUrl: { type: String },
+    portfolioUrl: { type: String },
+    keySkills: [String],
+    experienceLevel: {
+        type: String,
+        enum: ['entry-level', 'junior', 'mid-level', 'senior', 'lead', 'principal']
+    },
+    jobPreferences: {
+        jobTypes: [{ type: String, enum: ['full-time', 'part-time', 'contract', 'internship'] }],
+        locations: [String],
+        workArrangement: { type: String, enum: ['remote', 'hybrid', 'on-site'] }
+    },
+    applicationHistory: [{
+        jobPostId: { type: mongoose.Schema.Types.ObjectId },
+        companyName: String,
+        appliedAt: { type: Date, default: Date.now }
+    }]
+});
+
+/**
+ * @description Schema for a team member working under a hiring manager.
+ */
+const teamMemberSchema = new mongoose.Schema({
+    hiringManager: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    permissions: {
+        canCreateJobs: { type: Boolean, default: false },
+        canEditJobs: { type: Boolean, default: false },
+        canViewCandidates: { type: Boolean, default: true },
+        canUpdateCandidateStatus: { type: Boolean, default: true },
+        canScheduleInterviews: { type: Boolean, default: true },
+    }
+});
+
+/**
+ * @description Schema for a hiring manager or company representative.
+ */
+const collabHiringSchema = new mongoose.Schema({
+    companyName: { type: String, required: true, trim: true },
+    companyWebsite: { type: String, trim: true },
+    teamMembers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    jobPosts: [{
+        title: { type: String, required: true, trim: true },
+        status: { type: String, enum: ['draft', 'open', 'closed', 'archived'], default: 'draft' },
+        location: {
+            city: String,
+            state: String,
+            country: String,
+            type: { type: String, enum: ['remote', 'hybrid', 'on-site'], required: true }
+        },
+        jobType: { type: String, enum: ['full-time', 'part-time', 'contract', 'internship'], required: true },
+        department: { type: String, trim: true },
+        description: { type: String, required: true },
+        responsibilities: [String],
+        qualifications: [String],
+        skillsRequired: [String],
+        salaryRange: {
+            min: Number,
+            max: Number,
+            currency: { type: String, default: 'INR' },
+            period: { type: String, enum: ['yearly', 'monthly', 'hourly'], default: 'yearly' }
+        },
+        postedDate: { type: Date, default: Date.now },
+        expiryDate: Date,
+        applicants: [{
+            candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            resumeFile : String,
+            coverLetter: String,
+            applicationDate: { type: Date, default: Date.now },
+            status: {
+                type: String,
+                enum: ['applied', 'screening', 'shortlisted', 'interviewing', 'offer', 'hired', 'rejected', 'on-hold'],
+                default: 'applied'
+            },
+            currentStage: String
+        }]
+    }]
+});
+
+// Apply the discriminators to the base User model
+User.discriminator('candidate', candidateSchema);
+User.discriminator('team_member', teamMemberSchema);
+User.discriminator('collab_hiring', collabHiringSchema);
+
 // 4. Apply the discriminators to the base User model
 User.discriminator('student', studentSchema);
 User.discriminator('instructor', instructorSchema);
